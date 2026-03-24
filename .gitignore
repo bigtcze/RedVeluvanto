@@ -1,0 +1,38 @@
+# Agent specs - private
+.agents/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Go
+backend/redveluvanto
+backend/tmp/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Node / Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+*.tsbuildinfo
+
+# PocketBase data
+backend/pb_data/
+backend/pb_public/
+
+# Docker
+docker/volumes/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
