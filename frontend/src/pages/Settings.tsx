@@ -6,6 +6,7 @@ import pb from '@/lib/pocketbase'
 import { useAuth } from '@/lib/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { Slider } from '@/components/ui/slider'
@@ -72,6 +73,15 @@ export default function Settings() {
   const [userMgmtError, setUserMgmtError] = useState('')
   const [userMgmtSuccess, setUserMgmtSuccess] = useState('')
 
+  const [productName, setProductName] = useState('')
+  const [productDescription, setProductDescription] = useState('')
+  const [productTargetAudience, setProductTargetAudience] = useState('')
+  const [productKeyFeatures, setProductKeyFeatures] = useState('')
+  const [productDifferentiators, setProductDifferentiators] = useState('')
+  const [productWebsiteUrl, setProductWebsiteUrl] = useState('')
+  const [isSavingProduct, setIsSavingProduct] = useState(false)
+  const [productSaved, setProductSaved] = useState(false)
+
   const [availableModels, setAvailableModels] = useState<string[]>([])
   const [aiModel, setAiModel] = useState('')
   const [customModelName, setCustomModelName] = useState('')
@@ -131,6 +141,18 @@ export default function Settings() {
 
       await fetchAdminUsers()
 
+      try {
+        const productRecord = await pb.collection('product_context').getFirstListItem('id != ""')
+        setProductName(productRecord.name ?? '')
+        setProductDescription(productRecord.description ?? '')
+        setProductTargetAudience(productRecord.target_audience ?? '')
+        setProductKeyFeatures(productRecord.key_features ?? '')
+        setProductDifferentiators(productRecord.differentiators ?? '')
+        setProductWebsiteUrl(productRecord.website_url ?? '')
+      } catch (_e) {
+        void _e
+      }
+
       let models: string[] = []
       try {
         const res = await fetch('/api/ai/models', {
@@ -160,6 +182,33 @@ export default function Settings() {
     }
     void fetchAll()
   }, [user?.id])
+
+  const handleSaveProduct = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    setIsSavingProduct(true)
+    try {
+      const data = {
+        name: productName,
+        description: productDescription,
+        target_audience: productTargetAudience,
+        key_features: productKeyFeatures,
+        differentiators: productDifferentiators,
+        website_url: productWebsiteUrl,
+      }
+      try {
+        const existing = await pb.collection('product_context').getFirstListItem('id != ""')
+        await pb.collection('product_context').update(existing.id, data)
+      } catch {
+        await pb.collection('product_context').create(data)
+      }
+      setProductSaved(true)
+      setTimeout(() => setProductSaved(false), 2000)
+    } catch (_e) {
+      void _e
+    } finally {
+      setIsSavingProduct(false)
+    }
+  }
 
   const handleSaveAiModel = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -476,6 +525,52 @@ export default function Settings() {
 
         {isAdmin && (
           <>
+            <Separator />
+
+            <section className="rounded-xl border border-border bg-card p-5">
+              <h2 className="text-sm font-semibold mb-1">Product</h2>
+              <p className="text-xs text-muted-foreground mb-4">
+                Describe your product so AI can score threads and generate replies with context.
+              </p>
+              <form onSubmit={(e) => void handleSaveProduct(e)} className="flex flex-col gap-3">
+                <Input
+                  type="text"
+                  placeholder="Product name"
+                  value={productName}
+                  onChange={(e) => setProductName(e.target.value)}
+                />
+                <Textarea
+                  placeholder="What does your product do?"
+                  value={productDescription}
+                  onChange={(e) => setProductDescription(e.target.value)}
+                />
+                <Textarea
+                  placeholder="Who is your ideal customer?"
+                  value={productTargetAudience}
+                  onChange={(e) => setProductTargetAudience(e.target.value)}
+                />
+                <Textarea
+                  placeholder="Main features and capabilities"
+                  value={productKeyFeatures}
+                  onChange={(e) => setProductKeyFeatures(e.target.value)}
+                />
+                <Textarea
+                  placeholder="What makes you different from competitors?"
+                  value={productDifferentiators}
+                  onChange={(e) => setProductDifferentiators(e.target.value)}
+                />
+                <Input
+                  type="url"
+                  placeholder="https://..."
+                  value={productWebsiteUrl}
+                  onChange={(e) => setProductWebsiteUrl(e.target.value)}
+                />
+                <Button type="submit" size="sm" disabled={isSavingProduct} className="self-start">
+                  {productSaved ? 'Saved!' : isSavingProduct ? 'Saving…' : 'Save Product'}
+                </Button>
+              </form>
+            </section>
+
             <Separator />
 
             <section className="rounded-xl border border-border bg-card p-5">

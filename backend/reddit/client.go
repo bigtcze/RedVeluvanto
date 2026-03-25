@@ -182,6 +182,7 @@ func (c *Client) SearchPosts(ctx context.Context, accessToken, subreddit, query 
 	params := url.Values{}
 	params.Set("q", query)
 	params.Set("sort", "new")
+	params.Set("t", "day")
 	params.Set("limit", strconv.Itoa(limit))
 	params.Set("raw_json", "1")
 	params.Set("type", "link")

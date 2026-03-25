@@ -51,6 +51,18 @@ func (m *Monitor) Stop() {
 	close(m.stopCh)
 }
 
+func (m *Monitor) getSettingInt(key string, fallback int) int {
+	record, err := m.app.FindFirstRecordByFilter("settings", "key = {:k}", dbx.Params{"k": key})
+	if err != nil {
+		return fallback
+	}
+	val, err := strconv.Atoi(record.GetString("value"))
+	if err != nil || val <= 0 {
+		return fallback
+	}
+	return val
+}
+
 func (m *Monitor) getInterval() time.Duration {
 	record, err := m.app.FindFirstRecordByFilter("settings", "key = 'monitoring_interval'")
 	if err != nil {
@@ -155,6 +167,12 @@ func (m *Monitor) getSubredditMeta(ctx context.Context, token, subreddit string,
 }
 
 func (m *Monitor) processPost(ctx context.Context, token string, kw *core.Record, post reddit.Post, metaCache map[string]*subredditMeta) error {
+	maxAgeHours := m.getSettingInt("max_thread_age_hours", 12)
+	postTime := time.Unix(int64(post.CreatedUTC), 0)
+	if time.Since(postTime) > time.Duration(maxAgeHours)*time.Hour {
+		return nil
+	}
+
 	_, err := m.app.FindFirstRecordByFilter("threads", "reddit_id = {:rid}", dbx.Params{"rid": post.ID})
 	if err == nil {
 		return nil
@@ -181,6 +199,7 @@ func (m *Monitor) processPost(ctx context.Context, token string, kw *core.Record
 	record.Set("subreddit_description", meta.about.Description)
 	record.Set("matched_keyword", kw.Id)
 	record.Set("found_at", time.Now().UTC())
+	record.Set("reddit_created_at", postTime.UTC())
 
 	if err := m.app.Save(record); err != nil {
 		return fmt.Errorf("saving thread: %w", err)
@@ -189,7 +208,7 @@ func (m *Monitor) processPost(ctx context.Context, token string, kw *core.Record
 	var scoring *ai.ScoringResult
 	if m.aiClient != nil {
 		var scoreErr error
-		scoring, scoreErr = m.aiClient.ScoreThread(ctx, post.Title, post.SelfText, post.Subreddit, meta.about.Description, kw.GetString("keyword"))
+		scoring, scoreErr = m.aiClient.ScoreThread(ctx, post.Title, post.SelfText, post.Subreddit, meta.about.Description, kw.GetString("keyword"), ai.LoadProductContext(m.app))
 		if scoreErr != nil {
 			log.Printf("worker: monitor: AI scoring failed for %s: %v", post.ID, scoreErr)
 		} else {

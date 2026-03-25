@@ -1,8 +1,10 @@
+import { useEffect, useState } from 'react'
 import { NavLink, Outlet, Link } from 'react-router'
 import { LayoutDashboard, Inbox, Key, Settings, LogOut, Info } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import pb from '@/lib/pocketbase'
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
@@ -13,6 +15,26 @@ const navItems = [
 
 export default function Layout() {
   const { user, logout } = useAuth()
+  const [queueCount, setQueueCount] = useState(0)
+
+  useEffect(() => {
+    const fetchQueueCount = async () => {
+      try {
+        const res = await fetch('/api/drafts/queue-status', {
+          headers: { Authorization: pb.authStore.token },
+        })
+        if (res.ok) {
+          const data = (await res.json()) as { queued: number }
+          setQueueCount(data.queued)
+        }
+      } catch (_e) {
+        void _e
+      }
+    }
+    void fetchQueueCount()
+    const interval = setInterval(() => void fetchQueueCount(), 30000)
+    return () => clearInterval(interval)
+  }, [user?.id])
 
   return (
     <div className="flex h-screen bg-background text-foreground">
@@ -40,6 +62,11 @@ export default function Layout() {
             >
               <Icon className="size-4 shrink-0" />
               {label}
+              {to === '/' && queueCount > 0 && (
+                <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-bold text-primary-foreground">
+                  {queueCount}
+                </span>
+              )}
             </NavLink>
           ))}
         </div>
@@ -89,7 +116,7 @@ export default function Layout() {
             end={to === '/'}
             className={({ isActive }) =>
               cn(
-                'flex flex-1 flex-col items-center justify-center gap-1 py-2 text-xs font-medium transition-colors',
+                'relative flex flex-1 flex-col items-center justify-center gap-1 py-2 text-xs font-medium transition-colors',
                 isActive
                   ? 'text-sidebar-primary'
                   : 'text-sidebar-foreground/60 hover:text-sidebar-foreground'
@@ -98,6 +125,11 @@ export default function Layout() {
           >
             <Icon className="size-5 shrink-0" />
             {label}
+            {to === '/' && queueCount > 0 && (
+              <span className="absolute top-1 right-1/4 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
+                {queueCount}
+              </span>
+            )}
           </NavLink>
         ))}
         <button

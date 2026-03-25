@@ -12,10 +12,31 @@ type ScoringResult struct {
 	Reason string `json:"reason"`
 }
 
-func (c *Client) ScoreThread(ctx context.Context, title, body, subreddit, subredditDescription, keyword string) (*ScoringResult, error) {
-	systemMsg := Message{
-		Role: "system",
-		Content: `You are a relevance scoring engine. Evaluate how relevant this Reddit thread is for someone monitoring the keyword.
+type ProductContext struct {
+	Name            string
+	Description     string
+	TargetAudience  string
+	KeyFeatures     string
+	Differentiators string
+}
+
+func (c *Client) ScoreThread(ctx context.Context, title, body, subreddit, subredditDescription, keyword string, product *ProductContext) (*ScoringResult, error) {
+	var systemContent string
+	if product != nil && product.Name != "" {
+		systemContent = fmt.Sprintf(`You are a relevance scoring engine. Evaluate how relevant this Reddit thread is as an opportunity for the product "%s".
+
+Consider both keyword relevance and whether the thread presents a genuine opportunity to engage (e.g., someone asking for recommendations, discussing a problem the product solves, comparing alternatives).
+
+Score 0-100 where:
+- 90-100: OP is actively looking for a solution the product offers, high-engagement thread, perfect opportunity
+- 70-89: Thread is highly relevant to the product's domain, natural opportunity to contribute
+- 40-69: Thread is somewhat related, product could be mentioned but it would feel forced
+- 10-39: Loose connection, keyword match but not a real opportunity
+- 0-9: False positive, completely irrelevant context
+
+Respond ONLY with valid JSON: {"score": <number>, "reason": "<brief explanation>"}`, product.Name)
+	} else {
+		systemContent = `You are a relevance scoring engine. Evaluate how relevant this Reddit thread is for someone monitoring the keyword.
 
 Score 0-100 where:
 - 90-100: Thread directly discusses the exact topic, active discussion, perfect opportunity to engage
@@ -24,16 +45,28 @@ Score 0-100 where:
 - 10-39: Thread has loose connection to the keyword
 - 0-9: False positive, keyword match but completely irrelevant context
 
-Respond ONLY with valid JSON: {"score": <number>, "reason": "<brief explanation>"}`,
+Respond ONLY with valid JSON: {"score": <number>, "reason": "<brief explanation>"}`
 	}
 
-	userMsg := Message{
-		Role: "user",
-		Content: fmt.Sprintf(
-			"Keyword: %s\nSubreddit: r/%s\nSubreddit description: %s\nThread title: %s\nThread body: %s",
-			keyword, subreddit, subredditDescription, title, body,
-		),
+	systemMsg := Message{Role: "system", Content: systemContent}
+
+	var userParts []string
+	if product != nil && product.Name != "" {
+		productSection := fmt.Sprintf("=== YOUR PRODUCT ===\n%s — %s", product.Name, product.Description)
+		if product.TargetAudience != "" {
+			productSection += fmt.Sprintf("\nTarget audience: %s", product.TargetAudience)
+		}
+		if product.Differentiators != "" {
+			productSection += fmt.Sprintf("\nDifferentiators: %s", product.Differentiators)
+		}
+		userParts = append(userParts, productSection)
 	}
+	userParts = append(userParts, fmt.Sprintf(
+		"=== THREAD ===\nKeyword: %s\nSubreddit: r/%s\nSubreddit description: %s\nThread title: %s\nThread body: %s",
+		keyword, subreddit, subredditDescription, title, body,
+	))
+
+	userMsg := Message{Role: "user", Content: strings.Join(userParts, "\n\n")}
 
 	content, err := c.ChatCompletion(ctx, []Message{systemMsg, userMsg}, 0)
 	if err != nil {

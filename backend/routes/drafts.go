@@ -6,7 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
+	"strconv"
 	"time"
 
 	"github.com/pocketbase/dbx"
@@ -45,7 +45,7 @@ func RegisterDraftRoutes(e *core.ServeEvent, aiClient *ai.Client, redditClient *
 			return re.JSON(http.StatusNotFound, map[string]string{"error": "persona not found"})
 		}
 
-		generated, err := aiClient.GenerateReply(re.Request.Context(), persona, thread, body.ParentCommentID)
+		generated, err := aiClient.GenerateReply(re.Request.Context(), persona, thread, body.ParentCommentID, ai.LoadProductContext(re.App))
 		if err != nil {
 			return re.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		}
@@ -97,7 +97,7 @@ func RegisterDraftRoutes(e *core.ServeEvent, aiClient *ai.Client, redditClient *
 			return re.JSON(http.StatusNotFound, map[string]string{"error": "persona not found"})
 		}
 
-		generated, err := aiClient.GenerateReply(re.Request.Context(), persona, thread, existing.GetString("parent_comment_id"))
+		generated, err := aiClient.GenerateReply(re.Request.Context(), persona, thread, existing.GetString("parent_comment_id"), ai.LoadProductContext(re.App))
 		if err != nil {
 			return re.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		}
@@ -159,89 +159,126 @@ func RegisterDraftRoutes(e *core.ServeEvent, aiClient *ai.Client, redditClient *
 			return re.JSON(http.StatusForbidden, map[string]string{"error": "forbidden"})
 		}
 
-		account, err := re.App.FindFirstRecordByFilter("reddit_accounts", "user = {:uid} && is_active = true", dbx.Params{"uid": re.Auth.Id})
+		_, err = re.App.FindFirstRecordByFilter("reddit_accounts", "user = {:uid} && is_active = true", dbx.Params{"uid": re.Auth.Id})
 		if err != nil {
 			return re.JSON(http.StatusBadRequest, map[string]string{"error": "no active reddit account connected"})
 		}
 
-		encKey := os.Getenv("TOKEN_ENCRYPTION_KEY")
-		if encKey == "" {
-			encKey = os.Getenv("LITELLM_MASTER_KEY")
-		}
-		if encKey == "" {
-			encKey = "redveluvanto-default-key"
-		}
-
-		var redditToken string
-		tokenExpiry := account.GetDateTime("token_expiry").Time()
-		if time.Now().Add(5 * time.Minute).After(tokenExpiry) {
-			rawRefresh := account.GetString("refresh_token")
-			refreshToken, err := crypto.Decrypt(rawRefresh, encKey)
-			if err != nil {
-				refreshToken = rawRefresh
-			}
-			tokens, err := oauthConfig.RefreshToken(re.Request.Context(), refreshToken)
-			if err != nil {
-				return re.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to refresh reddit token"})
-			}
-			encAccess, _ := crypto.Encrypt(tokens.AccessToken, encKey)
-			account.Set("access_token", encAccess)
-			account.Set("token_expiry", time.Now().Add(time.Duration(tokens.ExpiresIn)*time.Second))
-			if err := re.App.Save(account); err != nil {
-				return re.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save refreshed token"})
-			}
-			redditToken = tokens.AccessToken
-		} else {
-			rawAccess := account.GetString("access_token")
-			decrypted, err := crypto.Decrypt(rawAccess, encKey)
-			if err != nil {
-				redditToken = rawAccess
-			} else {
-				redditToken = decrypted
-			}
-		}
-
-		thread, err := re.App.FindRecordById("threads", draft.GetString("thread"))
-		if err != nil {
-			return re.JSON(http.StatusNotFound, map[string]string{"error": "thread not found"})
-		}
-
-		var parentFullname string
-		if parentID := draft.GetString("parent_comment_id"); parentID != "" {
-			if strings.HasPrefix(parentID, "t1_") || strings.HasPrefix(parentID, "t3_") {
-				parentFullname = parentID
-			} else {
-				parentFullname = "t1_" + parentID
-			}
-		} else {
-			parentFullname = "t3_" + thread.GetString("reddit_id")
-		}
-
-		text := draft.GetString("edited_text")
-		if text == "" {
-			text = draft.GetString("generated_text")
-		}
-
-		comment, err := redditClient.SubmitComment(re.Request.Context(), redditToken, parentFullname, text)
-		if err != nil {
-			draft.Set("status", "failed")
-			_ = re.App.Save(draft)
-			return re.JSON(http.StatusBadGateway, map[string]string{"error": err.Error()})
-		}
-
-		draft.Set("status", "posted")
-		draft.Set("posted_at", time.Now().UTC())
-		draft.Set("reddit_comment_id", comment.ID)
+		draft.Set("status", "queued")
+		draft.Set("queued_at", time.Now().UTC())
 		if err := re.App.Save(draft); err != nil {
 			return re.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		}
 
-		status, err := re.App.FindFirstRecordByFilter("thread_status",
-			"thread = {:tid} && user = {:uid}",
-			dbx.Params{"tid": draft.GetString("thread"), "uid": re.Auth.Id})
+		return re.JSON(http.StatusOK, draft)
+	}).Bind(apis.RequireAuth())
+
+	e.Router.GET("/api/drafts/queue-status", func(re *core.RequestEvent) error {
+		threadID := re.Request.URL.Query().Get("thread_id")
+
+		dailyLimit := 50
+		limitRecord, err := re.App.FindFirstRecordByFilter("settings", "key = 'post_daily_limit'")
 		if err == nil {
-			status.Set("status", "replied")
-			_ = re.App.Save(status)
+			if v, parseErr := strconv.Atoi(limitRecord.GetString("value")); parseErr == nil && v > 0 {
+				dailyLimit = v
+			}
+		}
+
+		todayStart := time.Now().UTC().Truncate(24 * time.Hour)
+		todayPosts, _ := re.App.FindRecordsByFilter("drafts",
+			"status = 'posted' && user = {:uid} && posted_at >= {:since}", "", 0, 0,
+			dbx.Params{"uid": re.Auth.Id, "since": todayStart.Format(time.RFC3339)})
+
+		queued, _ := re.App.FindRecordsByFilter("drafts",
+			"status = 'queued' && user = {:uid}", "", 0, 0,
+			dbx.Params{"uid": re.Auth.Id})
+
+		isFollowUp := false
+		if threadID != "" {
+			existing, _ := re.App.FindFirstRecordByFilter("drafts",
+				"status = 'posted' && user = {:uid} && thread = {:tid}", "",
+				dbx.Params{"uid": re.Auth.Id, "tid": threadID})
+			isFollowUp = existing != nil
+		}
+
+		canQueue := isFollowUp || len(todayPosts) < dailyLimit
+
+		return re.JSON(http.StatusOK, map[string]interface{}{
+			"posted_today": len(todayPosts),
+			"daily_limit":  dailyLimit,
+			"queued":       len(queued),
+			"is_follow_up": isFollowUp,
+			"can_queue":    canQueue,
+		})
+	}).Bind(apis.RequireAuth())
+
+	e.Router.GET("/api/drafts/queue", func(re *core.RequestEvent) error {
+		drafts, err := re.App.FindRecordsByFilter("drafts",
+			"(status = 'queued' || status = 'posting') && user = {:uid}",
+			"queued_at", 0, 50,
+			dbx.Params{"uid": re.Auth.Id})
+		if err != nil {
+			return re.JSON(http.StatusOK, []interface{}{})
+		}
+
+		type queueItem struct {
+			ID          string `json:"id"`
+			ThreadID    string `json:"thread_id"`
+			ThreadTitle string `json:"thread_title"`
+			Subreddit   string `json:"subreddit"`
+			Status      string `json:"status"`
+			QueuedAt    string `json:"queued_at"`
+			TextPreview string `json:"text_preview"`
+		}
+
+		items := make([]queueItem, 0, len(drafts))
+		for _, d := range drafts {
+			threadID := d.GetString("thread")
+			var title, subreddit string
+			if t, tErr := re.App.FindRecordById("threads", threadID); tErr == nil {
+				title = t.GetString("title")
+				subreddit = t.GetString("subreddit")
+			}
+
+			text := d.GetString("edited_text")
+			if text == "" {
+				text = d.GetString("generated_text")
+			}
+			if len(text) > 120 {
+				text = text[:120] + "…"
+			}
+
+			items = append(items, queueItem{
+				ID:          d.Id,
+				ThreadID:    threadID,
+				ThreadTitle: title,
+				Subreddit:   subreddit,
+				Status:      d.GetString("status"),
+				QueuedAt:    d.GetDateTime("queued_at").Time().Format(time.RFC3339),
+				TextPreview: text,
+			})
+		}
+
+		return re.JSON(http.StatusOK, items)
+	}).Bind(apis.RequireAuth())
+
+	e.Router.POST("/api/drafts/{id}/cancel", func(re *core.RequestEvent) error {
+		id := re.Request.PathValue("id")
+
+		draft, err := re.App.FindRecordById("drafts", id)
+		if err != nil {
+			return re.JSON(http.StatusNotFound, map[string]string{"error": "draft not found"})
+		}
+		if draft.GetString("user") != re.Auth.Id {
+			return re.JSON(http.StatusForbidden, map[string]string{"error": "forbidden"})
+		}
+		if draft.GetString("status") != "queued" {
+			return re.JSON(http.StatusBadRequest, map[string]string{"error": "only queued drafts can be cancelled"})
+		}
+
+		draft.Set("status", "draft")
+		if err := re.App.Save(draft); err != nil {
+			return re.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		}
 
 		return re.JSON(http.StatusOK, draft)

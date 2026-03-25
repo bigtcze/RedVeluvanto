@@ -8,7 +8,8 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-import { MessageSquare, ArrowUp, Clock } from 'lucide-react'
+import { MessageSquare, ArrowUp, Clock, AlertTriangle } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 type ThreadStatus = 'new' | 'reviewed' | 'replied' | 'dismissed'
 
@@ -21,6 +22,7 @@ interface Thread extends RecordModel {
   comment_count: number
   relevance_score: number
   found_at: string
+  reddit_created_at?: string
   matched_keyword: string
 }
 
@@ -37,6 +39,12 @@ function timeAgo(dateStr: string): string {
   if (hrs < 24) return `${hrs}h ago`
   const days = Math.floor(hrs / 24)
   return `${days}d ago`
+}
+
+function isStale(thread: Thread): boolean {
+  const dateStr = thread.reddit_created_at ?? thread.found_at
+  if (!dateStr) return false
+  return Date.now() - new Date(dateStr).getTime() > 12 * 60 * 60 * 1000
 }
 
 function relevanceBadgeClass(score: number): string {
@@ -170,7 +178,10 @@ export default function Inbox() {
           filteredThreads.map((thread) => (
             <Card
               key={thread.id}
-              className="cursor-pointer hover:bg-muted/30 transition-colors"
+              className={cn(
+                'cursor-pointer hover:bg-muted/30 transition-colors',
+                isStale(thread) && 'opacity-50'
+              )}
               onClick={() => void navigate(`/threads/${thread.id}`)}
               onTouchStart={(e) => {
                 touchStartX.current = e.touches[0].clientX
@@ -222,8 +233,14 @@ export default function Inbox() {
                   </span>
                   <span className="flex items-center gap-1">
                     <Clock className="size-3" />
-                    {timeAgo(thread.found_at)}
+                    {timeAgo(thread.reddit_created_at ?? thread.found_at)}
                   </span>
+                  {isStale(thread) && (
+                    <span className="flex items-center gap-1 text-yellow-500">
+                      <AlertTriangle className="size-3" />
+                      Stale
+                    </span>
+                  )}
                 </div>
               </CardContent>
             </Card>

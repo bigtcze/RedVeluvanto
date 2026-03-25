@@ -25,10 +25,14 @@ func main() {
 	})
 
 	var monitor *worker.Monitor
+	var poster *worker.Poster
 
 	app.OnTerminate().BindFunc(func(e *core.TerminateEvent) error {
 		if monitor != nil {
 			monitor.Stop()
+		}
+		if poster != nil {
+			poster.Stop()
 		}
 		return e.Next()
 	})
@@ -61,6 +65,8 @@ func main() {
 		routes.RegisterThreadRoutes(se, redditClient, oauthConfig)
 		monitor = worker.NewMonitor(se.App, redditClient, oauthConfig, aiClient)
 		monitor.Start()
+		poster = worker.NewPoster(se.App, redditClient, oauthConfig)
+		poster.Start()
 		return se.Next()
 	})
 

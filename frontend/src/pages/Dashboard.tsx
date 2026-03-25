@@ -5,7 +5,8 @@ import pb from '@/lib/pocketbase'
 import { useAuth } from '@/lib/auth'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { MessageSquare, CheckCircle2, Key, Users, ArrowRight, Clock } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { MessageSquare, CheckCircle2, Key, Users, ArrowRight, Clock, Send, XCircle, Loader2 } from 'lucide-react'
 
 interface DraftWithExpand extends RecordModel {
   status: string
@@ -15,6 +16,16 @@ interface DraftWithExpand extends RecordModel {
       title: string
     }
   }
+}
+
+interface QueueItem {
+  id: string
+  thread_id: string
+  thread_title: string
+  subreddit: string
+  status: string
+  queued_at: string
+  text_preview: string
 }
 
 interface Stats {
@@ -39,6 +50,7 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const [stats, setStats] = useState<Stats>({ newThreads: 0, replied: 0, activeKeywords: 0, personas: 0 })
   const [recentDrafts, setRecentDrafts] = useState<DraftWithExpand[]>([])
+  const [queueItems, setQueueItems] = useState<QueueItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
@@ -74,13 +86,39 @@ export default function Dashboard() {
           personas: personasResult.totalItems,
         })
         setRecentDrafts(recentDraftsResult.items)
-      } catch {
+
+        try {
+          const queueRes = await fetch('/api/drafts/queue', {
+            headers: { Authorization: pb.authStore.token },
+          })
+          if (queueRes.ok) {
+            setQueueItems(await queueRes.json() as QueueItem[])
+          }
+        } catch (_e) {
+          void _e
+        }
+      } catch (_e) {
+        void _e
       } finally {
         setIsLoading(false)
       }
     }
     void fetchData()
   }, [user?.id])
+
+  const handleCancelQueued = async (draftId: string) => {
+    try {
+      const res = await fetch(`/api/drafts/${draftId}/cancel`, {
+        method: 'POST',
+        headers: { Authorization: pb.authStore.token },
+      })
+      if (res.ok) {
+        setQueueItems((prev) => prev.filter((q) => q.id !== draftId))
+      }
+    } catch (_e) {
+      void _e
+    }
+  }
 
   const statCards = [
     { label: 'New Threads', value: stats.newThreads, icon: MessageSquare, color: 'text-blue-400' },
@@ -113,6 +151,54 @@ export default function Dashboard() {
           </Card>
         ))}
       </div>
+
+      {queueItems.length > 0 && (
+        <div>
+          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3 flex items-center gap-2">
+            <Send className="size-3.5" />
+            Post Queue
+            <Badge variant="outline" className="text-xs">{queueItems.length}</Badge>
+          </h2>
+          <div className="flex flex-col gap-2">
+            {queueItems.map((item) => (
+              <div
+                key={item.id}
+                className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 hover:bg-muted/30 transition-colors"
+              >
+                {item.status === 'posting' ? (
+                  <Loader2 className="size-3.5 text-yellow-400 animate-spin shrink-0" />
+                ) : (
+                  <Clock className="size-3.5 text-muted-foreground shrink-0" />
+                )}
+                <div
+                  className="flex-1 min-w-0 cursor-pointer"
+                  onClick={() => void navigate(`/threads/${item.thread_id}`)}
+                >
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary" className="text-xs shrink-0">r/{item.subreddit}</Badge>
+                    <span className="text-xs font-medium truncate">{item.thread_title}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground truncate mt-0.5">{item.text_preview}</p>
+                </div>
+                <span className="text-xs text-muted-foreground shrink-0">{timeAgo(item.queued_at)}</span>
+                <Badge variant={item.status === 'posting' ? 'default' : 'outline'} className="text-xs capitalize shrink-0">
+                  {item.status === 'posting' ? 'Posting…' : 'Queued'}
+                </Badge>
+                {item.status === 'queued' && (
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => void handleCancelQueued(item.id)}
+                    className="shrink-0 text-muted-foreground hover:text-destructive"
+                  >
+                    <XCircle className="size-3.5" />
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div>
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">

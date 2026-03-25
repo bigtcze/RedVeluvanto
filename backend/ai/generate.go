@@ -10,7 +10,7 @@ import (
 	"redveluvanto/reddit"
 )
 
-func (c *Client) GenerateReply(ctx context.Context, personaRecord *core.Record, threadRecord *core.Record, targetCommentID string) (string, error) {
+func (c *Client) GenerateReply(ctx context.Context, personaRecord *core.Record, threadRecord *core.Record, targetCommentID string, product *ProductContext) (string, error) {
 	var traits map[string]float64
 	unmarshalField(personaRecord.GetString("traits"), &traits)
 	if traits == nil {
@@ -86,6 +86,19 @@ func (c *Client) GenerateReply(ctx context.Context, personaRecord *core.Record, 
 	}
 
 	var userMsgParts []string
+	if product != nil && product.Name != "" {
+		productSection := fmt.Sprintf("=== YOUR PRODUCT ===\n%s — %s", product.Name, product.Description)
+		if product.TargetAudience != "" {
+			productSection += fmt.Sprintf("\nTarget audience: %s", product.TargetAudience)
+		}
+		if product.KeyFeatures != "" {
+			productSection += fmt.Sprintf("\nKey features: %s", product.KeyFeatures)
+		}
+		if product.Differentiators != "" {
+			productSection += fmt.Sprintf("\nDifferentiators: %s", product.Differentiators)
+		}
+		userMsgParts = append(userMsgParts, productSection)
+	}
 	if subredditName != "" {
 		userMsgParts = append(userMsgParts, "=== SUBREDDIT ===\nr/"+subredditName)
 	}

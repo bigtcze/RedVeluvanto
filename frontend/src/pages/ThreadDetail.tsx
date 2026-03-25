@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ArrowLeft, ArrowUp, RefreshCw, Send, Save, Wand2, ChevronDown, ChevronUp } from 'lucide-react'
+import { ArrowLeft, ArrowUp, RefreshCw, Send, Save, Wand2, ChevronDown, ChevronUp, XCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface Thread extends RecordModel {
@@ -43,7 +43,7 @@ interface DraftRecord extends RecordModel {
 interface DraftHistoryRecord extends RecordModel {
   generated_text: string
   edited_text?: string
-  status: 'draft' | 'posted' | 'failed'
+  status: 'draft' | 'queued' | 'posting' | 'posted' | 'failed'
 }
 
 function relevanceBadgeClass(score: number): string {
@@ -62,9 +62,10 @@ function timeAgo(dateStr: string): string {
   return `${days}d ago`
 }
 
-function historyStatusVariant(status: string): 'default' | 'secondary' | 'destructive' {
+function historyStatusVariant(status: string): 'default' | 'secondary' | 'destructive' | 'outline' {
   if (status === 'posted') return 'default'
   if (status === 'failed') return 'destructive'
+  if (status === 'queued' || status === 'posting') return 'outline'
   return 'secondary'
 }
 
@@ -109,6 +110,13 @@ export default function ThreadDetail() {
   const [isLoading, setIsLoading] = useState(true)
   const [draftHistory, setDraftHistory] = useState<DraftHistoryRecord[]>([])
   const [historyExpanded, setHistoryExpanded] = useState(false)
+  const [queueStatus, setQueueStatus] = useState<{
+    posted_today: number
+    daily_limit: number
+    queued: number
+    is_follow_up: boolean
+    can_queue: boolean
+  } | null>(null)
 
   useEffect(() => {
     const fetchData = async () => {
@@ -168,9 +176,20 @@ export default function ThreadDetail() {
       } catch {
         setDraftHistory([])
       }
+
+      try {
+        const res = await fetch(`/api/drafts/queue-status?thread_id=${id}`, {
+          headers: { Authorization: pb.authStore.token },
+        })
+        if (res.ok) {
+          setQueueStatus(await res.json() as typeof queueStatus)
+        }
+      } catch (_e) {
+        void _e
+      }
     }
     void fetchHistory()
-  }, [id, user?.id, draftId])
+  }, [id, user?.id, draftId, draftStatus])
 
   const handleRefreshComments = async () => {
     if (!id) return
@@ -241,18 +260,38 @@ export default function ThreadDetail() {
     }
   }
 
+  const [draftStatus, setDraftStatus] = useState<string>('')
+
   const handleApprove = async () => {
     if (!draftId) return
     setIsApproving(true)
     try {
-      await fetch(`/api/drafts/${draftId}/approve`, {
+      const res = await fetch(`/api/drafts/${draftId}/approve`, {
         method: 'POST',
         headers: { Authorization: pb.authStore.token },
       })
+      if (res.ok) {
+        setDraftStatus('queued')
+      }
     } catch (_e) {
       void _e
     } finally {
       setIsApproving(false)
+    }
+  }
+
+  const handleCancelQueue = async () => {
+    if (!draftId) return
+    try {
+      const res = await fetch(`/api/drafts/${draftId}/cancel`, {
+        method: 'POST',
+        headers: { Authorization: pb.authStore.token },
+      })
+      if (res.ok) {
+        setDraftStatus('')
+      }
+    } catch (_e) {
+      void _e
     }
   }
 
@@ -456,15 +495,38 @@ export default function ThreadDetail() {
                   <Save className="size-3.5" />
                   {isSaving ? 'Saving…' : 'Save Draft'}
                 </Button>
-                <Button
-                  size="sm"
-                  onClick={() => void handleApprove()}
-                  disabled={isApproving}
-                  className="flex-1 gap-1.5"
-                >
-                  <Send className="size-3.5" />
-                  {isApproving ? 'Sending…' : 'Approve & Send'}
-                </Button>
+                {draftStatus === 'queued' ? (
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => void handleCancelQueue()}
+                    className="flex-1 gap-1.5"
+                  >
+                    <XCircle className="size-3.5" />
+                    Cancel Queue
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    onClick={() => void handleApprove()}
+                    disabled={isApproving || draftStatus === 'posting' || draftStatus === 'posted' || queueStatus?.can_queue === false}
+                    className="flex-1 gap-1.5"
+                    title={queueStatus?.can_queue === false ? `Daily limit reached (${queueStatus.posted_today}/${queueStatus.daily_limit})` : undefined}
+                  >
+                    <Send className="size-3.5" />
+                    {isApproving ? 'Queuing…' : draftStatus === 'posting' ? 'Posting…' : draftStatus === 'posted' ? 'Posted' : 'Approve & Queue'}
+                  </Button>
+                )}
+                {queueStatus?.can_queue === false && (
+                  <p className="text-xs text-destructive">
+                    Daily limit reached ({queueStatus.posted_today}/{queueStatus.daily_limit} posts). Resets at midnight UTC.
+                  </p>
+                )}
+                {queueStatus != null && queueStatus.queued > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {queueStatus.queued} {queueStatus.queued === 1 ? 'draft' : 'drafts'} in queue
+                  </p>
+                )}
               </div>
             </div>
           </>
