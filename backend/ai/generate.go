@@ -114,13 +114,8 @@ func (c *Client) GenerateReply(ctx context.Context, personaRecord *core.Record, 
 	}
 	userMsgParts = append(userMsgParts, fmt.Sprintf("=== YOUR TARGET ===\nReply to %s\n\nGenerate your reply now.", targetDesc))
 
-	complianceNote := `
-
-CRITICAL RULE — SUBREDDIT COMPLIANCE:
-Subreddit rules ALWAYS take priority over your persona goals. If the subreddit rules prohibit self-promotion, product links, advertising, or commercial content, you MUST comply even if your reply goal is "promote" or "traffic". In such cases, focus on being genuinely helpful without mentioning any product or link. When you had to suppress your persona goal due to subreddit rules, append this marker on a new line at the very end of your reply: [⚠️ Subreddit rules restrict promotion — reply adjusted]`
-
 	messages := []Message{
-		{Role: "system", Content: systemPrompt + complianceNote},
+		{Role: "system", Content: systemPrompt},
 		{Role: "user", Content: strings.Join(userMsgParts, "\n\n")},
 	}
 

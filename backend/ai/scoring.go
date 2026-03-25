@@ -21,32 +21,21 @@ type ProductContext struct {
 }
 
 func (c *Client) ScoreThread(ctx context.Context, title, body, subreddit, subredditDescription, keyword string, product *ProductContext) (*ScoringResult, error) {
-	var systemContent string
+	context := "someone monitoring the keyword"
 	if product != nil && product.Name != "" {
-		systemContent = fmt.Sprintf(`You are a relevance scoring engine. Evaluate how relevant this Reddit thread is as an opportunity for the product "%s".
-
-Consider both keyword relevance and whether the thread presents a genuine opportunity to engage (e.g., someone asking for recommendations, discussing a problem the product solves, comparing alternatives).
-
-Score 0-100 where:
-- 90-100: OP is actively looking for a solution the product offers, high-engagement thread, perfect opportunity
-- 70-89: Thread is highly relevant to the product's domain, natural opportunity to contribute
-- 40-69: Thread is somewhat related, product could be mentioned but it would feel forced
-- 10-39: Loose connection, keyword match but not a real opportunity
-- 0-9: False positive, completely irrelevant context
-
-Respond ONLY with valid JSON: {"score": <number>, "reason": "<brief explanation>"}`, product.Name)
-	} else {
-		systemContent = `You are a relevance scoring engine. Evaluate how relevant this Reddit thread is for someone monitoring the keyword.
-
-Score 0-100 where:
-- 90-100: Thread directly discusses the exact topic, active discussion, perfect opportunity to engage
-- 70-89: Thread is highly relevant, topic is discussed but not the main focus
-- 40-69: Thread is somewhat related, keyword appears in context but tangentially
-- 10-39: Thread has loose connection to the keyword
-- 0-9: False positive, keyword match but completely irrelevant context
-
-Respond ONLY with valid JSON: {"score": <number>, "reason": "<brief explanation>"}`
+		context = fmt.Sprintf("the product \"%s\"", product.Name)
 	}
+
+	systemContent := fmt.Sprintf(`Relevance scoring engine. Score how relevant this Reddit thread is for %s.
+
+Score 0-100:
+- 90-100: Direct match, OP seeking solutions, perfect engagement opportunity
+- 70-89: Highly relevant, natural opportunity to contribute
+- 40-69: Somewhat related, mention would feel forced
+- 10-39: Loose connection, not a real opportunity
+- 0-9: False positive, irrelevant context
+
+Respond ONLY with valid JSON: {"score": <number>, "reason": "<brief explanation>"}`, context)
 
 	systemMsg := Message{Role: "system", Content: systemContent}
 
