@@ -1,8 +1,36 @@
 model_list:
+  # --- Vertex AI (default, recommended for production) ---
   - model_name: gemini-2.5-flash
     litellm_params:
-      model: gemini/gemini-2.5-flash-preview-04-17
-      api_key: os.environ/GEMINI_API_KEY
+      model: vertex_ai/gemini-2.5-flash
+      vertex_project: os.environ/VERTEX_PROJECT
+      vertex_location: os.environ/VERTEX_LOCATION
+      vertex_credentials: os.environ/GOOGLE_APPLICATION_CREDENTIALS
+
+  # --- OpenAI (uncomment and set OPENAI_API_KEY in .env) ---
+  # - model_name: gpt-4o-mini
+  #   litellm_params:
+  #     model: openai/gpt-4o-mini
+  #     api_key: os.environ/OPENAI_API_KEY
+  #
+  # - model_name: gpt-4o
+  #   litellm_params:
+  #     model: openai/gpt-4o
+  #     api_key: os.environ/OPENAI_API_KEY
+
+  # --- Anthropic (uncomment and set ANTHROPIC_API_KEY in .env) ---
+  # - model_name: claude-sonnet
+  #   litellm_params:
+  #     model: anthropic/claude-sonnet-4-20250514
+  #     api_key: os.environ/ANTHROPIC_API_KEY
+
+litellm_settings:
+  num_retries: 3
+  retry_after: 5
+
+router_settings:
+  allowed_fails: 3
+  cooldown_time: 30
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY

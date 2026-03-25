@@ -130,6 +130,22 @@ export default function ThreadDetail() {
           } catch {
             setComments([])
           }
+        } else {
+          try {
+            const res = await fetch(`/api/threads/${id}/refresh`, {
+              method: 'POST',
+              headers: { Authorization: pb.authStore.token },
+            })
+            if (res.ok) {
+              const updated = (await res.json()) as Thread
+              setThread(updated)
+              if (updated.comments_tree) {
+                setComments(JSON.parse(updated.comments_tree) as Comment[])
+              }
+            }
+          } catch {
+            setComments([])
+          }
         }
       } catch {
         setThread(null)

@@ -95,3 +95,42 @@ func (c *Client) ChatCompletion(ctx context.Context, messages []Message, tempera
 
 	return chatResp.Choices[0].Message.Content, nil
 }
+
+func (c *Client) ListModels(ctx context.Context) ([]string, error) {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/v1/models", nil)
+	if err != nil {
+		return nil, err
+	}
+	if c.masterKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+c.masterKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("LiteLLM /v1/models returned status %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	seen := make(map[string]bool)
+	var models []string
+	for _, m := range result.Data {
+		if !seen[m.ID] {
+			seen[m.ID] = true
+			models = append(models, m.ID)
+		}
+	}
+	return models, nil
+}

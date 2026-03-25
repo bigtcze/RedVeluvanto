@@ -2,6 +2,8 @@ package routes
 
 import (
 	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -30,6 +32,12 @@ func RegisterDraftRoutes(e *core.ServeEvent, aiClient *ai.Client, redditClient *
 		thread, err := re.App.FindRecordById("threads", body.ThreadID)
 		if err != nil {
 			return re.JSON(http.StatusNotFound, map[string]string{"error": "thread not found"})
+		}
+
+		if thread.GetString("comments_tree") == "" || thread.GetString("comments_tree") == "null" {
+			if err := ensureComments(re, thread, redditClient, oauthConfig); err != nil {
+				log.Printf("drafts: failed to fetch comments for thread %s: %v", body.ThreadID, err)
+			}
 		}
 
 		persona, err := re.App.FindRecordById("personas", body.PersonaID)
@@ -76,6 +84,12 @@ func RegisterDraftRoutes(e *core.ServeEvent, aiClient *ai.Client, redditClient *
 		thread, err := re.App.FindRecordById("threads", existing.GetString("thread"))
 		if err != nil {
 			return re.JSON(http.StatusNotFound, map[string]string{"error": "thread not found"})
+		}
+
+		if thread.GetString("comments_tree") == "" || thread.GetString("comments_tree") == "null" {
+			if err := ensureComments(re, thread, redditClient, oauthConfig); err != nil {
+				log.Printf("drafts: failed to fetch comments for thread %s: %v", existing.GetString("thread"), err)
+			}
 		}
 
 		persona, err := re.App.FindRecordById("personas", existing.GetString("persona"))
@@ -232,4 +246,59 @@ func RegisterDraftRoutes(e *core.ServeEvent, aiClient *ai.Client, redditClient *
 
 		return re.JSON(http.StatusOK, draft)
 	}).Bind(apis.RequireAuth())
+}
+
+func ensureComments(re *core.RequestEvent, thread *core.Record, redditClient *reddit.Client, oauthConfig *reddit.OAuthConfig) error {
+	account, err := re.App.FindFirstRecordByFilter("reddit_accounts", "user = {:uid} && is_active = true", dbx.Params{"uid": re.Auth.Id})
+	if err != nil {
+		return fmt.Errorf("no active reddit account: %w", err)
+	}
+
+	encKey := os.Getenv("TOKEN_ENCRYPTION_KEY")
+	if encKey == "" {
+		encKey = os.Getenv("LITELLM_MASTER_KEY")
+	}
+	if encKey == "" {
+		encKey = "redveluvanto-default-key"
+	}
+
+	var accessToken string
+	tokenExpiry := account.GetDateTime("token_expiry").Time()
+	if time.Now().Add(5 * time.Minute).After(tokenExpiry) {
+		rawRefresh := account.GetString("refresh_token")
+		refreshToken, decErr := crypto.Decrypt(rawRefresh, encKey)
+		if decErr != nil {
+			refreshToken = rawRefresh
+		}
+		tokens, refErr := oauthConfig.RefreshToken(re.Request.Context(), refreshToken)
+		if refErr != nil {
+			return fmt.Errorf("failed to refresh token: %w", refErr)
+		}
+		encAccess, _ := crypto.Encrypt(tokens.AccessToken, encKey)
+		account.Set("access_token", encAccess)
+		account.Set("token_expiry", time.Now().Add(time.Duration(tokens.ExpiresIn)*time.Second))
+		if saveErr := re.App.Save(account); saveErr != nil {
+			return fmt.Errorf("failed to save token: %w", saveErr)
+		}
+		accessToken = tokens.AccessToken
+	} else {
+		rawAccess := account.GetString("access_token")
+		decrypted, decErr := crypto.Decrypt(rawAccess, encKey)
+		if decErr != nil {
+			accessToken = rawAccess
+		} else {
+			accessToken = decrypted
+		}
+	}
+
+	postWithComments, err := redditClient.GetPostComments(re.Request.Context(), accessToken, thread.GetString("reddit_id"))
+	if err != nil {
+		return fmt.Errorf("failed to fetch comments: %w", err)
+	}
+
+	commentsJSON, _ := json.Marshal(postWithComments.Comments)
+	thread.Set("comments_tree", string(commentsJSON))
+	thread.Set("num_comments", postWithComments.Post.NumComments)
+
+	return re.App.Save(thread)
 }

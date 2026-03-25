@@ -116,11 +116,17 @@ func NewClient(userAgent string) *Client {
 
 func (c *Client) doRequest(ctx context.Context, method, rawURL, accessToken string, body io.Reader, contentType string) (*http.Response, error) {
 	c.mu.Lock()
-	if c.rateLimitRemaining == 0 && time.Now().Before(c.rateLimitReset) {
+	if c.rateLimitRemaining <= 5 && time.Now().Before(c.rateLimitReset) {
+		wait := time.Until(c.rateLimitReset)
 		c.mu.Unlock()
-		return nil, fmt.Errorf("reddit rate limit exceeded, resets at %s", c.rateLimitReset)
+		select {
+		case <-time.After(wait):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	} else {
+		c.mu.Unlock()
 	}
-	c.mu.Unlock()
 
 	req, err := http.NewRequestWithContext(ctx, method, rawURL, body)
 	if err != nil {
@@ -152,6 +158,22 @@ func (c *Client) doRequest(ctx context.Context, method, rawURL, accessToken stri
 		}
 	}
 	c.mu.Unlock()
+
+	if resp.StatusCode == http.StatusTooManyRequests {
+		resp.Body.Close()
+		c.mu.Lock()
+		wait := time.Until(c.rateLimitReset)
+		if wait <= 0 {
+			wait = 10 * time.Second
+		}
+		c.mu.Unlock()
+		select {
+		case <-time.After(wait):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		return c.doRequest(ctx, method, rawURL, accessToken, nil, contentType)
+	}
 
 	return resp, nil
 }

@@ -72,16 +72,8 @@ export default function Settings() {
   const [userMgmtError, setUserMgmtError] = useState('')
   const [userMgmtSuccess, setUserMgmtSuccess] = useState('')
 
-  const AI_MODELS = [
-    'gemini-2.5-flash',
-    'gemini-2.5-pro',
-    'gpt-4o',
-    'gpt-4o-mini',
-    'claude-sonnet-4-20250514',
-    'custom',
-  ] as const
-
-  const [aiModel, setAiModel] = useState('gemini-2.5-flash')
+  const [availableModels, setAvailableModels] = useState<string[]>([])
+  const [aiModel, setAiModel] = useState('')
   const [customModelName, setCustomModelName] = useState('')
   const [isSavingAiModel, setIsSavingAiModel] = useState(false)
   const [aiModelSaved, setAiModelSaved] = useState(false)
@@ -139,11 +131,24 @@ export default function Settings() {
 
       await fetchAdminUsers()
 
+      let models: string[] = []
+      try {
+        const res = await fetch('/api/ai/models', {
+          headers: { Authorization: pb.authStore.token },
+        })
+        if (res.ok) {
+          models = (await res.json()) as string[]
+          setAvailableModels(models)
+        }
+      } catch (_e) {
+        void _e
+      }
+
       try {
         const record = await pb.collection('settings').getFirstListItem('key = "ai_model"')
         const val = record.value as string
         const parsed = JSON.parse(val) as string
-        if ((AI_MODELS as readonly string[]).includes(parsed)) {
+        if (models.length === 0 || models.includes(parsed)) {
           setAiModel(parsed)
         } else {
           setAiModel('custom')
@@ -484,11 +489,10 @@ export default function Settings() {
                     <SelectValue placeholder="Select model…" />
                   </SelectTrigger>
                   <SelectContent>
-                    {AI_MODELS.map((m) => (
-                      <SelectItem key={m} value={m}>
-                        {m === 'custom' ? 'Custom…' : m}
-                      </SelectItem>
+                    {availableModels.map((m) => (
+                      <SelectItem key={m} value={m}>{m}</SelectItem>
                     ))}
+                    <SelectItem value="custom">Custom…</SelectItem>
                   </SelectContent>
                 </Select>
                 {aiModel === 'custom' && (

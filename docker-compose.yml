@@ -26,10 +26,15 @@ services:
   litellm:
     image: ghcr.io/berriai/litellm:main-stable
     environment:
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
+      - VERTEX_PROJECT=${VERTEX_PROJECT}
+      - VERTEX_LOCATION=${VERTEX_LOCATION}
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/service-account.json
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
     volumes:
       - ./docker/litellm/config.yaml:/app/config.yaml
+      - ./credentials:/app/credentials:ro
     command: ["--config", "/app/config.yaml", "--port", "4000"]
     restart: unless-stopped
 

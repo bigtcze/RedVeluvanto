@@ -6,6 +6,8 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
+
+	"redveluvanto/ai"
 )
 
 func isSuperuser(app core.App, authRecord *core.Record) bool {
@@ -16,7 +18,7 @@ func isSuperuser(app core.App, authRecord *core.Record) bool {
 	return err == nil
 }
 
-func RegisterAdminRoutes(e *core.ServeEvent) {
+func RegisterAdminRoutes(e *core.ServeEvent, aiClient *ai.Client) {
 	e.Router.GET("/api/setup/status", func(re *core.RequestEvent) error {
 		_, err := re.App.FindFirstRecordByFilter("_superusers", "id != ''")
 		needsSetup := err != nil
@@ -124,5 +126,13 @@ func RegisterAdminRoutes(e *core.ServeEvent) {
 		}
 
 		return re.NoContent(http.StatusNoContent)
+	}).Bind(apis.RequireAuth())
+
+	e.Router.GET("/api/ai/models", func(re *core.RequestEvent) error {
+		models, err := aiClient.ListModels(re.Request.Context())
+		if err != nil {
+			return re.JSON(http.StatusBadGateway, map[string]string{"error": err.Error()})
+		}
+		return re.JSON(http.StatusOK, models)
 	}).Bind(apis.RequireAuth())
 }

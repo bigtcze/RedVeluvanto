@@ -56,7 +56,7 @@ func main() {
 		routes.RegisterRedditRoutes(se, oauthConfig, redditClient)
 		routes.RegisterDraftRoutes(se, aiClient, redditClient, oauthConfig)
 		routes.RegisterPersonaRoutes(se, aiClient)
-		routes.RegisterAdminRoutes(se)
+		routes.RegisterAdminRoutes(se, aiClient)
 		routes.RegisterKnowledgeRoutes(se)
 		routes.RegisterThreadRoutes(se, redditClient, oauthConfig)
 		monitor = worker.NewMonitor(se.App, redditClient, oauthConfig, aiClient)

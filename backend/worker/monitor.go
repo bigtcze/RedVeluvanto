@@ -95,20 +95,27 @@ func (m *Monitor) runCycle() {
 	}
 }
 
+type subredditMeta struct {
+	rules []reddit.SubredditRule
+	about *reddit.SubredditAbout
+}
+
 func (m *Monitor) processKeyword(ctx context.Context, token string, kw *core.Record) {
 	query := kw.GetString("keyword")
 	subreddits := kw.GetStringSlice("subreddits")
 
+	metaCache := make(map[string]*subredditMeta)
+
 	if len(subreddits) == 0 {
-		m.searchAndProcess(ctx, token, kw, query, "")
+		m.searchAndProcess(ctx, token, kw, query, "", metaCache)
 	} else {
 		for _, sub := range subreddits {
-			m.searchAndProcess(ctx, token, kw, query, sub)
+			m.searchAndProcess(ctx, token, kw, query, sub, metaCache)
 		}
 	}
 }
 
-func (m *Monitor) searchAndProcess(ctx context.Context, token string, kw *core.Record, query, subreddit string) {
+func (m *Monitor) searchAndProcess(ctx context.Context, token string, kw *core.Record, query, subreddit string, metaCache map[string]*subredditMeta) {
 	results, err := m.client.SearchPosts(ctx, token, subreddit, query, 25, "")
 	if err != nil {
 		log.Printf("worker: monitor: search failed for %q in r/%s: %v", query, subreddit, err)
@@ -116,37 +123,45 @@ func (m *Monitor) searchAndProcess(ctx context.Context, token string, kw *core.R
 	}
 
 	for _, post := range results.Posts {
-		if err := m.processPost(ctx, token, kw, post); err != nil {
+		if err := m.processPost(ctx, token, kw, post, metaCache); err != nil {
 			log.Printf("worker: monitor: failed to process post %s: %v", post.ID, err)
 		}
 	}
 }
 
-func (m *Monitor) processPost(ctx context.Context, token string, kw *core.Record, post reddit.Post) error {
+func (m *Monitor) getSubredditMeta(ctx context.Context, token, subreddit string, metaCache map[string]*subredditMeta) *subredditMeta {
+	if cached, ok := metaCache[subreddit]; ok {
+		return cached
+	}
+
+	meta := &subredditMeta{}
+
+	rules, err := m.client.GetSubredditRules(ctx, token, subreddit)
+	if err != nil {
+		log.Printf("worker: monitor: failed to get rules for r/%s: %v", subreddit, err)
+	} else {
+		meta.rules = rules
+	}
+
+	about, err := m.client.GetSubredditAbout(ctx, token, subreddit)
+	if err != nil {
+		log.Printf("worker: monitor: failed to get about for r/%s: %v", subreddit, err)
+		about = &reddit.SubredditAbout{}
+	}
+	meta.about = about
+
+	metaCache[subreddit] = meta
+	return meta
+}
+
+func (m *Monitor) processPost(ctx context.Context, token string, kw *core.Record, post reddit.Post, metaCache map[string]*subredditMeta) error {
 	_, err := m.app.FindFirstRecordByFilter("threads", "reddit_id = {:rid}", dbx.Params{"rid": post.ID})
 	if err == nil {
 		return nil
 	}
 
-	postWithComments, err := m.client.GetPostComments(ctx, token, post.ID)
-	if err != nil {
-		log.Printf("worker: monitor: failed to get comments for %s: %v", post.ID, err)
-		postWithComments = &reddit.PostWithComments{Post: post}
-	}
-
-	rules, err := m.client.GetSubredditRules(ctx, token, post.Subreddit)
-	if err != nil {
-		log.Printf("worker: monitor: failed to get rules for r/%s: %v", post.Subreddit, err)
-	}
-
-	about, err := m.client.GetSubredditAbout(ctx, token, post.Subreddit)
-	if err != nil {
-		log.Printf("worker: monitor: failed to get about for r/%s: %v", post.Subreddit, err)
-		about = &reddit.SubredditAbout{}
-	}
-
-	commentsJSON, _ := json.Marshal(postWithComments.Comments)
-	rulesJSON, _ := json.Marshal(rules)
+	meta := m.getSubredditMeta(ctx, token, post.Subreddit, metaCache)
+	rulesJSON, _ := json.Marshal(meta.rules)
 
 	col, err := m.app.FindCollectionByNameOrId("threads")
 	if err != nil {
@@ -162,9 +177,8 @@ func (m *Monitor) processPost(ctx context.Context, token string, kw *core.Record
 	record.Set("author", post.Author)
 	record.Set("score", post.Score)
 	record.Set("num_comments", post.NumComments)
-	record.Set("comments_tree", string(commentsJSON))
 	record.Set("subreddit_rules", string(rulesJSON))
-	record.Set("subreddit_description", about.Description)
+	record.Set("subreddit_description", meta.about.Description)
 	record.Set("matched_keyword", kw.Id)
 	record.Set("found_at", time.Now().UTC())
 
@@ -175,7 +189,7 @@ func (m *Monitor) processPost(ctx context.Context, token string, kw *core.Record
 	var scoring *ai.ScoringResult
 	if m.aiClient != nil {
 		var scoreErr error
-		scoring, scoreErr = m.aiClient.ScoreThread(ctx, post.Title, post.SelfText, post.Subreddit, about.Description, kw.GetString("keyword"))
+		scoring, scoreErr = m.aiClient.ScoreThread(ctx, post.Title, post.SelfText, post.Subreddit, meta.about.Description, kw.GetString("keyword"))
 		if scoreErr != nil {
 			log.Printf("worker: monitor: AI scoring failed for %s: %v", post.ID, scoreErr)
 		} else {

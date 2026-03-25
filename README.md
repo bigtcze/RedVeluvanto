@@ -31,7 +31,7 @@ Existing Reddit AI tools either:
 ### Prerequisites
 
 - Docker & Docker Compose
-- A [Google Gemini API key](https://aistudio.google.com/) (free tier works)
+- An AI provider — **Google Vertex AI** (recommended), OpenAI, or Anthropic
 - A [Reddit app](https://www.reddit.com/prefs/apps) (type: web app)
 
 ### 3 Steps
@@ -43,7 +43,7 @@ cd RedVeluvanto
 
 # 2. Configure
 cp .env.example .env
-# Edit .env — add your GEMINI_API_KEY, REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET
+# Edit .env — set your AI provider credentials and Reddit app keys (see below)
 
 # 3. Launch (uses pre-built images from GitHub Container Registry)
 docker compose up -d
@@ -66,17 +66,75 @@ To add more users, go to Settings → User Management (admin only).
 
 ## Configuration
 
+### AI Provider Setup
+
+RedVeluvanto uses [LiteLLM](https://docs.litellm.ai/) as a proxy — you can use any supported AI provider. Choose one:
+
+#### Option 1: Google Vertex AI (recommended)
+
+Best for production — no daily request limits (RPD), pay-per-token pricing.
+
+1. Create a [GCP project](https://console.cloud.google.com/) with billing enabled
+2. Enable the Vertex AI API
+3. Create a service account with the **Vertex AI User** role
+4. Download the service account JSON key
+5. Place it at `./credentials/service-account.json`
+6. Set in `.env`:
+   ```env
+   VERTEX_PROJECT=your-gcp-project-id
+   VERTEX_LOCATION=us-central1
+   ```
+
+#### Option 2: OpenAI
+
+1. Get an API key from [platform.openai.com](https://platform.openai.com/)
+2. Set in `.env`:
+   ```env
+   OPENAI_API_KEY=sk-...
+   AI_FAST_MODEL=gpt-4o-mini
+   ```
+3. In `docker/litellm/config.yaml`, uncomment the OpenAI model block
+
+#### Option 3: Anthropic
+
+1. Get an API key from [console.anthropic.com](https://console.anthropic.com/)
+2. Set in `.env`:
+   ```env
+   ANTHROPIC_API_KEY=sk-ant-...
+   AI_FAST_MODEL=claude-sonnet
+   ```
+3. In `docker/litellm/config.yaml`, uncomment the Anthropic model block
+
+#### Using any other provider
+
+LiteLLM supports 100+ providers. Add your model to `docker/litellm/config.yaml`:
+
+```yaml
+model_list:
+  - model_name: my-model
+    litellm_params:
+      model: provider/model-name
+      api_key: os.environ/MY_API_KEY
+```
+
+Then set `AI_FAST_MODEL=my-model` in `.env`. The available models will automatically appear in Settings → AI Model.
+
 ### Environment Variables
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `GEMINI_API_KEY` | Yes | — | Google Gemini API key |
-| `LITELLM_MASTER_KEY` | No | `sk-redveluvanto-change-me` | LiteLLM proxy auth key |
-| `LITELLM_URL` | No | `http://litellm:4000` | LiteLLM proxy URL |
+| `VERTEX_PROJECT` | Yes* | — | GCP project ID (Vertex AI) |
+| `VERTEX_LOCATION` | No | `us-central1` | GCP region (Vertex AI) |
+| `OPENAI_API_KEY` | Yes* | — | OpenAI API key |
+| `ANTHROPIC_API_KEY` | Yes* | — | Anthropic API key |
 | `AI_FAST_MODEL` | No | `gemini-2.5-flash` | Model name for scoring + generation |
+| `LITELLM_MASTER_KEY` | No | `sk-redveluvanto-change-me` | LiteLLM proxy auth key |
 | `REDDIT_CLIENT_ID` | Yes | — | Reddit app client ID |
 | `REDDIT_CLIENT_SECRET` | Yes | — | Reddit app client secret |
 | `REDDIT_REDIRECT_URI` | No | `http://localhost:8090/api/reddit/callback` | OAuth2 redirect URI |
+| `TOKEN_ENCRYPTION_KEY` | No | Falls back to `LITELLM_MASTER_KEY` | Encryption key for Reddit tokens at rest |
+
+*\* One AI provider is required. Set credentials for your chosen provider.*
 
 ### Reddit App Setup
 
@@ -85,20 +143,6 @@ To add more users, go to Settings → User Management (admin only).
 3. Select **web app**
 4. Set redirect URI to `http://localhost:8090/api/reddit/callback` (or your domain)
 5. Copy the client ID (under the app name) and secret
-
-### Using a Different AI Model
-
-RedVeluvanto uses LiteLLM as a proxy, so you can use any model it supports. Edit `docker/litellm/config.yaml`:
-
-```yaml
-model_list:
-  - model_name: my-model
-    litellm_params:
-      model: openai/gpt-4o
-      api_key: os.environ/OPENAI_API_KEY
-```
-
-Then set `AI_FAST_MODEL=my-model` in your `.env` file.
 
 ## Development
 
