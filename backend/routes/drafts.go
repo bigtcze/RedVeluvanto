@@ -45,7 +45,7 @@ func RegisterDraftRoutes(e *core.ServeEvent, aiClient *ai.Client, redditClient *
 			return re.JSON(http.StatusNotFound, map[string]string{"error": "persona not found"})
 		}
 
-		generated, err := aiClient.GenerateReply(re.Request.Context(), persona, thread, body.ParentCommentID, ai.LoadProductContext(re.App))
+		generated, err := aiClient.GenerateReply(re.Request.Context(), persona, thread, body.ParentCommentID, ai.LoadProductContext(re.App), ai.LoadGlobalForbiddenWords(re.App))
 		if err != nil {
 			return re.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		}
@@ -55,6 +55,8 @@ func RegisterDraftRoutes(e *core.ServeEvent, aiClient *ai.Client, redditClient *
 			return re.JSON(http.StatusInternalServerError, map[string]string{"error": "drafts collection not found"})
 		}
 
+		detection, _ := aiClient.DetectAIContent(re.Request.Context(), generated)
+
 		draft := core.NewRecord(col)
 		draft.Set("thread", body.ThreadID)
 		draft.Set("persona", body.PersonaID)
@@ -62,6 +64,11 @@ func RegisterDraftRoutes(e *core.ServeEvent, aiClient *ai.Client, redditClient *
 		draft.Set("parent_comment_id", body.ParentCommentID)
 		draft.Set("generated_text", generated)
 		draft.Set("status", "draft")
+		if detection != nil {
+			draft.Set("ai_detection_score", detection.Score)
+			flagsJSON, _ := json.Marshal(detection.Flags)
+			draft.Set("ai_detection_flags", string(flagsJSON))
+		}
 
 		if err := re.App.Save(draft); err != nil {
 			return re.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -97,7 +104,7 @@ func RegisterDraftRoutes(e *core.ServeEvent, aiClient *ai.Client, redditClient *
 			return re.JSON(http.StatusNotFound, map[string]string{"error": "persona not found"})
 		}
 
-		generated, err := aiClient.GenerateReply(re.Request.Context(), persona, thread, existing.GetString("parent_comment_id"), ai.LoadProductContext(re.App))
+		generated, err := aiClient.GenerateReply(re.Request.Context(), persona, thread, existing.GetString("parent_comment_id"), ai.LoadProductContext(re.App), ai.LoadGlobalForbiddenWords(re.App))
 		if err != nil {
 			return re.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		}
@@ -107,6 +114,8 @@ func RegisterDraftRoutes(e *core.ServeEvent, aiClient *ai.Client, redditClient *
 			return re.JSON(http.StatusInternalServerError, map[string]string{"error": "drafts collection not found"})
 		}
 
+		detection, _ := aiClient.DetectAIContent(re.Request.Context(), generated)
+
 		newDraft := core.NewRecord(col)
 		newDraft.Set("thread", existing.GetString("thread"))
 		newDraft.Set("persona", existing.GetString("persona"))
@@ -114,6 +123,11 @@ func RegisterDraftRoutes(e *core.ServeEvent, aiClient *ai.Client, redditClient *
 		newDraft.Set("parent_comment_id", existing.GetString("parent_comment_id"))
 		newDraft.Set("generated_text", generated)
 		newDraft.Set("status", "draft")
+		if detection != nil {
+			newDraft.Set("ai_detection_score", detection.Score)
+			flagsJSON, _ := json.Marshal(detection.Flags)
+			newDraft.Set("ai_detection_flags", string(flagsJSON))
+		}
 
 		if err := re.App.Save(newDraft); err != nil {
 			return re.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})

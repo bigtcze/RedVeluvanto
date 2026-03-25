@@ -14,6 +14,7 @@ func BuildPersonaPrompt(
 	competitorStance string,
 	competitorNames []string,
 	forbiddenWords []string,
+	globalForbiddenWords []string,
 	maxLength int,
 	language string,
 	knowledgeText string,
@@ -108,16 +109,19 @@ func BuildPersonaPrompt(
 		parts = append(parts, section)
 	}
 
-	if len(forbiddenWords) > 0 {
-		var filtered []string
-		for _, w := range forbiddenWords {
-			if w != "" {
-				filtered = append(filtered, w)
-			}
+	var allForbidden []string
+	for _, w := range globalForbiddenWords {
+		if w != "" {
+			allForbidden = append(allForbidden, w)
 		}
-		if len(filtered) > 0 {
-			parts = append(parts, fmt.Sprintf("## Forbidden Words\nNever use these words or phrases: %s", strings.Join(filtered, ", ")))
+	}
+	for _, w := range forbiddenWords {
+		if w != "" {
+			allForbidden = append(allForbidden, w)
 		}
+	}
+	if len(allForbidden) > 0 {
+		parts = append(parts, fmt.Sprintf("## Forbidden Words\nNever use these words or phrases: %s", strings.Join(allForbidden, ", ")))
 	}
 
 	if maxLength > 0 {
@@ -145,7 +149,29 @@ func BuildPersonaPrompt(
 		}
 	}
 
-	parts = append(parts, "IMPORTANT: Detect the language of the comment you're replying to and respond in the SAME language. If the comment is in English, reply in English. If in Czech, reply in Czech. This overrides the default language setting.\n\nDo NOT include any meta-commentary. Do NOT start with \"Here's my response\" or similar. Write the reply directly as if posting on Reddit.")
+	parts = append(parts, `IMPORTANT: Detect the language of the comment you're replying to and respond in the SAME language. If the comment is in English, reply in English. If in Czech, reply in Czech. This overrides the default language setting.
+
+CRITICAL — WRITE LIKE A REAL PERSON, NOT AN AI:
+You are writing a Reddit comment. Real Reddit users will read this. If it sounds like AI, it will be downvoted, reported, and the account will be banned.
+
+Absolutely forbidden phrases and patterns:
+- Openers: "Great question!", "Absolutely!", "That's a really good point!", "I'd be happy to help!", "Sure!", "Definitely!"
+- Connectors: "Furthermore", "Moreover", "Additionally", "It's worth noting that", "It's important to note", "That being said", "In terms of", "When it comes to"
+- Closers: "Hope this helps!", "Let me know if you have any questions!", "Happy to help!", "Best of luck!", "Feel free to reach out!"
+- Superlatives: "incredibly powerful", "absolutely essential", "game-changer", "a]mazing tool", "fantastic solution", "robust solution", "seamless experience"
+- Structure: Do NOT use bullet points or numbered lists unless the comment you're replying to uses them. Do NOT use bold text. Do NOT write "Here are some key points:". Write in natural paragraphs like a real person.
+- Meta-commentary: Do NOT start with "Here's my response" or similar. Do NOT reference yourself being helpful.
+
+How real Reddit users write:
+- They jump straight into the point. No pleasantries.
+- They share personal experience: "I switched to X about 6 months ago and..."
+- They're opinionated: "Honestly, Y is overrated because..."
+- They use casual language, contractions, sometimes incomplete sentences.
+- They don't structure everything into neat bullet points.
+- They sometimes go on tangents or add a side note.
+- Short replies are fine. Not everything needs 3 paragraphs.
+
+Write the reply directly as if posting on Reddit. Sound like a person who genuinely uses the product, not like a marketing bot.`)
 
 	return strings.Join(parts, "\n\n")
 }

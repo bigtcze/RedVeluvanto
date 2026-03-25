@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ArrowLeft, ArrowUp, RefreshCw, Send, Save, Wand2, ChevronDown, ChevronUp, XCircle } from 'lucide-react'
+import { ArrowLeft, ArrowUp, RefreshCw, Send, Save, Wand2, ChevronDown, ChevronUp, XCircle, AlertTriangle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface Thread extends RecordModel {
@@ -38,6 +38,8 @@ interface Persona extends RecordModel {
 
 interface DraftRecord extends RecordModel {
   generated_text: string
+  ai_detection_score?: number
+  ai_detection_flags?: string
 }
 
 interface DraftHistoryRecord extends RecordModel {
@@ -110,6 +112,9 @@ export default function ThreadDetail() {
   const [isLoading, setIsLoading] = useState(true)
   const [draftHistory, setDraftHistory] = useState<DraftHistoryRecord[]>([])
   const [historyExpanded, setHistoryExpanded] = useState(false)
+  const [draftStatus, setDraftStatus] = useState<string>('')
+  const [aiDetectionScore, setAiDetectionScore] = useState<number | null>(null)
+  const [aiDetectionFlags, setAiDetectionFlags] = useState<string[]>([])
   const [queueStatus, setQueueStatus] = useState<{
     posted_today: number
     daily_limit: number
@@ -236,6 +241,12 @@ export default function ThreadDetail() {
       const data = (await res.json()) as DraftRecord
       setDraftId(data.id)
       setDraftContent(data.generated_text ?? '')
+      setAiDetectionScore(data.ai_detection_score ?? null)
+      try {
+        setAiDetectionFlags(data.ai_detection_flags ? JSON.parse(data.ai_detection_flags) as string[] : [])
+      } catch {
+        setAiDetectionFlags([])
+      }
     } catch (_e) {
       void _e
     } finally {
@@ -253,14 +264,18 @@ export default function ThreadDetail() {
       })
       const data = (await res.json()) as DraftRecord
       setDraftContent(data.generated_text ?? '')
+      setAiDetectionScore(data.ai_detection_score ?? null)
+      try {
+        setAiDetectionFlags(data.ai_detection_flags ? JSON.parse(data.ai_detection_flags) as string[] : [])
+      } catch {
+        setAiDetectionFlags([])
+      }
     } catch (_e) {
       void _e
     } finally {
       setIsGenerating(false)
     }
   }
-
-  const [draftStatus, setDraftStatus] = useState<string>('')
 
   const handleApprove = async () => {
     if (!draftId) return
@@ -473,16 +488,33 @@ export default function ThreadDetail() {
               className="min-h-36 resize-y text-sm"
               placeholder="Generated reply will appear here…"
             />
+            {aiDetectionScore != null && aiDetectionScore > 5 && (
+              <div className="rounded-md border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 flex flex-col gap-1.5">
+                <div className="flex items-center gap-1.5 text-xs font-medium text-yellow-500">
+                  <AlertTriangle className="size-3.5" />
+                  This reply may sound AI-generated ({aiDetectionScore}/10)
+                </div>
+                {aiDetectionFlags.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {aiDetectionFlags.map((flag, i) => (
+                      <span key={i} className="rounded-full bg-yellow-500/20 px-2 py-0.5 text-[10px] text-yellow-400">
+                        {flag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <div className="flex flex-col gap-2">
               <Button
-                variant="outline"
+                variant={aiDetectionScore != null && aiDetectionScore > 5 ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => void handleRegenerate()}
                 disabled={isGenerating}
                 className="w-full gap-2"
               >
                 <RefreshCw className="size-3.5" />
-                Try Again
+                {aiDetectionScore != null && aiDetectionScore > 5 ? 'Regenerate (recommended)' : 'Try Again'}
               </Button>
               <div className="flex gap-2">
                 <Button

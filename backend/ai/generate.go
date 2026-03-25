@@ -10,7 +10,7 @@ import (
 	"redveluvanto/reddit"
 )
 
-func (c *Client) GenerateReply(ctx context.Context, personaRecord *core.Record, threadRecord *core.Record, targetCommentID string, product *ProductContext) (string, error) {
+func (c *Client) GenerateReply(ctx context.Context, personaRecord *core.Record, threadRecord *core.Record, targetCommentID string, product *ProductContext, globalForbiddenWords []string) (string, error) {
 	var traits map[string]float64
 	unmarshalField(personaRecord.GetString("traits"), &traits)
 	if traits == nil {
@@ -45,7 +45,7 @@ func (c *Client) GenerateReply(ctx context.Context, personaRecord *core.Record, 
 	systemPrompt := BuildPersonaPrompt(
 		traits, customTraits, replyGoal, replyGoalDetail,
 		behaviorRules, competitorStance, competitorNames,
-		forbiddenWords, maxLength, language,
+		forbiddenWords, globalForbiddenWords, maxLength, language,
 		knowledgeText, knowledgeCache, examples,
 	)
 

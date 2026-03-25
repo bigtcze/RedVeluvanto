@@ -35,6 +35,7 @@ import {
   ChevronDown,
   ChevronUp,
   X,
+  Wand2,
 } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -185,6 +186,19 @@ export default function PersonaBuilder() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [isLoading, setIsLoading] = useState(isEditMode)
 
+  const [styleModalOpen, setStyleModalOpen] = useState(false)
+  const [styleStep, setStyleStep] = useState(0)
+  const [styleAnswers, setStyleAnswers] = useState<string[]>(['', '', '', '', ''])
+  const [isAnalyzingStyle, setIsAnalyzingStyle] = useState(false)
+
+  const styleQuestions = [
+    "Someone asks for a tool recommendation in your product's category. How would you reply? (2-3 sentences, as you'd write on Reddit)",
+    "A colleague on Slack suggests a solution you disagree with. What do you write back?",
+    "A customer complains about a bug in your product. How do you respond?",
+    "Write a short post about a product you genuinely like and use.",
+    "Someone comments 'this is overrated, [competitor] is way better'. How do you reply?",
+  ]
+
   // ── Load existing persona ───────────────────────────────────────────────────
   useEffect(() => {
     if (!id) return
@@ -300,6 +314,29 @@ export default function PersonaBuilder() {
       void _e
     } finally {
       setIsGeneratingPreview(false)
+    }
+  }
+
+  const handleStyleInterview = async () => {
+    setIsAnalyzingStyle(true)
+    try {
+      const res = await fetch('/api/personas/style-interview', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: pb.authStore.token,
+        },
+        body: JSON.stringify({ answers: styleAnswers }),
+      })
+      const result = (await res.json()) as { examples: string[] }
+      setExamples(result.examples)
+      setStyleModalOpen(false)
+      setStyleStep(0)
+      setStyleAnswers(['', '', '', '', ''])
+    } catch (_e) {
+      void _e
+    } finally {
+      setIsAnalyzingStyle(false)
     }
   }
 
@@ -894,16 +931,28 @@ export default function PersonaBuilder() {
                   </Button>
                 </div>
               ))}
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setExamples((prev) => [...prev, ''])}
-                className="gap-1.5 self-start"
-              >
-                <Plus className="size-3.5" />
-                Add Example
-              </Button>
+              <div className="flex gap-2 flex-wrap">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setExamples((prev) => [...prev, ''])}
+                  className="gap-1.5"
+                >
+                  <Plus className="size-3.5" />
+                  Add Example
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => { setStyleModalOpen(true); setStyleStep(0); setStyleAnswers(['', '', '', '', '']) }}
+                  className="gap-1.5"
+                >
+                  <Wand2 className="size-3.5" />
+                  Generate from my style
+                </Button>
+              </div>
             </div>
           </section>
 
@@ -975,6 +1024,78 @@ export default function PersonaBuilder() {
           <div className="p-4 border-t border-border">{previewPanel}</div>
         )}
       </div>
+
+      <Dialog open={styleModalOpen} onOpenChange={(open) => { if (!isAnalyzingStyle) setStyleModalOpen(open) }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Generate from my style</DialogTitle>
+            <DialogDescription>
+              Question {styleStep + 1} of {styleQuestions.length}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-3 py-2">
+            <p className="text-sm">{styleQuestions[styleStep]}</p>
+            <Textarea
+              value={styleAnswers[styleStep]}
+              onChange={(e) =>
+                setStyleAnswers((prev) => prev.map((a, i) => (i === styleStep ? e.target.value : a)))
+              }
+              placeholder="Write your answer here…"
+              className="min-h-[120px]"
+              disabled={isAnalyzingStyle}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setStyleAnswers((prev) => prev.map((a, i) => (i === styleStep ? '' : a)))
+                if (styleStep < styleQuestions.length - 1) {
+                  setStyleStep((s) => s + 1)
+                } else {
+                  void handleStyleInterview()
+                }
+              }}
+              className="text-xs text-muted-foreground underline underline-offset-2 self-start hover:text-foreground transition-colors"
+              disabled={isAnalyzingStyle}
+            >
+              Skip
+            </button>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            {styleStep > 0 && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setStyleStep((s) => s - 1)}
+                disabled={isAnalyzingStyle}
+              >
+                Back
+              </Button>
+            )}
+            {styleStep < styleQuestions.length - 1 ? (
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => setStyleStep((s) => s + 1)}
+                disabled={isAnalyzingStyle}
+              >
+                Next
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void handleStyleInterview()}
+                disabled={isAnalyzingStyle}
+                className="gap-1.5"
+              >
+                {isAnalyzingStyle && <Loader2 className="size-3.5 animate-spin" />}
+                {isAnalyzingStyle ? 'Generating…' : 'Generate'}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete confirmation dialog */}
       <Dialog open={showDeleteDialog} onOpenChange={(open) => setShowDeleteDialog(open)}>

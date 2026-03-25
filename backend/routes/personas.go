@@ -41,6 +41,7 @@ func RegisterPersonaRoutes(e *core.ServeEvent, aiClient *ai.Client) {
 			body.CompetitorStance,
 			body.CompetitorNames,
 			body.ForbiddenWords,
+			ai.LoadGlobalForbiddenWords(re.App),
 			body.MaxLength,
 			body.Language,
 			body.KnowledgeText,
@@ -85,5 +86,28 @@ Generate your reply now.`
 			"preview":        preview,
 			"system_prompt": systemPrompt,
 		})
+	}).Bind(apis.RequireAuth())
+
+	e.Router.GET("/api/personas/style-questions", func(re *core.RequestEvent) error {
+		return re.JSON(http.StatusOK, ai.StyleInterviewQuestions)
+	}).Bind(apis.RequireAuth())
+
+	e.Router.POST("/api/personas/style-interview", func(re *core.RequestEvent) error {
+		var body struct {
+			Answers []string `json:"answers"`
+		}
+		if err := json.NewDecoder(re.Request.Body).Decode(&body); err != nil {
+			return re.JSON(http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		}
+		if len(body.Answers) < 3 {
+			return re.JSON(http.StatusBadRequest, map[string]string{"error": "at least 3 answers required"})
+		}
+
+		result, err := aiClient.AnalyzeStyleAndGenerateExamples(re.Request.Context(), body.Answers)
+		if err != nil {
+			return re.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}
+
+		return re.JSON(http.StatusOK, result)
 	}).Bind(apis.RequireAuth())
 }

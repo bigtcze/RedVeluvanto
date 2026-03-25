@@ -82,6 +82,10 @@ export default function Settings() {
   const [isSavingProduct, setIsSavingProduct] = useState(false)
   const [productSaved, setProductSaved] = useState(false)
 
+  const [globalForbiddenPhrases, setGlobalForbiddenPhrases] = useState('')
+  const [isSavingForbidden, setIsSavingForbidden] = useState(false)
+  const [forbiddenSaved, setForbiddenSaved] = useState(false)
+
   const [availableModels, setAvailableModels] = useState<string[]>([])
   const [aiModel, setAiModel] = useState('')
   const [customModelName, setCustomModelName] = useState('')
@@ -153,6 +157,14 @@ export default function Settings() {
         void _e
       }
 
+      try {
+        const record = await pb.collection('settings').getFirstListItem('key = "global_forbidden_phrases"')
+        const phrases = JSON.parse(record.value as string) as string[]
+        setGlobalForbiddenPhrases(phrases.join('\n'))
+      } catch (_e) {
+        void _e
+      }
+
       let models: string[] = []
       try {
         const res = await fetch('/api/ai/models', {
@@ -182,6 +194,30 @@ export default function Settings() {
     }
     void fetchAll()
   }, [user?.id])
+
+  const handleSaveForbidden = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    setIsSavingForbidden(true)
+    const phrases = globalForbiddenPhrases
+      .split('\n')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0)
+    const value = JSON.stringify(phrases)
+    try {
+      try {
+        const existing = await pb.collection('settings').getFirstListItem('key = "global_forbidden_phrases"')
+        await pb.collection('settings').update(existing.id, { value })
+      } catch {
+        await pb.collection('settings').create({ key: 'global_forbidden_phrases', value })
+      }
+      setForbiddenSaved(true)
+      setTimeout(() => setForbiddenSaved(false), 2000)
+    } catch (_e) {
+      void _e
+    } finally {
+      setIsSavingForbidden(false)
+    }
+  }
 
   const handleSaveProduct = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -567,6 +603,26 @@ export default function Settings() {
                 />
                 <Button type="submit" size="sm" disabled={isSavingProduct} className="self-start">
                   {productSaved ? 'Saved!' : isSavingProduct ? 'Saving…' : 'Save Product'}
+                </Button>
+              </form>
+            </section>
+
+            <Separator />
+
+            <section className="rounded-xl border border-border bg-card p-5">
+              <h2 className="text-sm font-semibold mb-1">Forbidden Phrases</h2>
+              <p className="text-xs text-muted-foreground mb-4">
+                Words and phrases the AI must never use in any generated reply. One per line. Applied globally across all personas.
+              </p>
+              <form onSubmit={(e) => void handleSaveForbidden(e)} className="flex flex-col gap-3">
+                <Textarea
+                  value={globalForbiddenPhrases}
+                  onChange={(e) => setGlobalForbiddenPhrases(e.target.value)}
+                  placeholder={"Great question!\nHope this helps!\nGame-changer\nFurthermore"}
+                  className="min-h-32 resize-y text-sm"
+                />
+                <Button type="submit" size="sm" disabled={isSavingForbidden} className="self-start">
+                  {forbiddenSaved ? 'Saved!' : isSavingForbidden ? 'Saving…' : 'Save Phrases'}
                 </Button>
               </form>
             </section>

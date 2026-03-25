@@ -1,6 +1,11 @@
 package ai
 
-import "github.com/pocketbase/pocketbase/core"
+import (
+	"encoding/json"
+
+	"github.com/pocketbase/dbx"
+	"github.com/pocketbase/pocketbase/core"
+)
 
 func LoadProductContext(app core.App) *ProductContext {
 	pc, err := app.FindFirstRecordByFilter("product_context", "id != ''")
@@ -14,4 +19,16 @@ func LoadProductContext(app core.App) *ProductContext {
 		KeyFeatures:     pc.GetString("key_features"),
 		Differentiators: pc.GetString("differentiators"),
 	}
+}
+
+func LoadGlobalForbiddenWords(app core.App) []string {
+	record, err := app.FindFirstRecordByFilter("settings", "key = {:k}", dbx.Params{"k": "global_forbidden_phrases"})
+	if err != nil {
+		return nil
+	}
+	var words []string
+	if err := json.Unmarshal([]byte(record.GetString("value")), &words); err != nil {
+		return nil
+	}
+	return words
 }
