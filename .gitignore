@@ -1,6 +1,9 @@
 # Agent specs - private
 .agents/
 
+# Credentials
+credentials/
+
 # Environment
 .env
 .env.local

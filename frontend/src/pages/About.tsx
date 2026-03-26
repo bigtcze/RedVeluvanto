@@ -8,7 +8,7 @@ export default function About() {
         <h1 className="text-xl font-bold">About</h1>
       </div>
 
-      <div className="flex-1 overflow-auto p-4 flex flex-col gap-4 max-w-lg">
+      <div className="flex-1 overflow-auto p-4 flex flex-col gap-4 max-w-2xl mx-auto w-full">
         <div className="rounded-xl border border-border bg-card p-6 flex flex-col gap-4">
           <div className="flex items-center gap-3">
             <span className="text-2xl font-bold tracking-tight">

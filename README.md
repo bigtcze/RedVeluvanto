@@ -49,13 +49,13 @@ cp .env.example .env
 docker compose up -d
 ```
 
-Open [http://localhost](http://localhost) in your browser.
+Open [http://localhost:3080](http://localhost:3080) in your browser.
 
 > **Building from source?** Use `docker compose -f docker-compose.dev.yml up --build` instead.
 
 ### First-Time Setup
 
-1. Open [http://localhost](http://localhost) — you'll see the setup wizard
+1. Open [http://localhost:3080](http://localhost:3080) — you'll see the setup wizard
 2. Create your admin account (email + password)
 3. You'll be automatically logged in
 4. Go to Settings → Connect your Reddit account

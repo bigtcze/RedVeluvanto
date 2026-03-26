@@ -100,23 +100,27 @@ func (p *Poster) tryPost(draft *core.Record, globalDelay, accountDelay, subreddi
 		return false
 	}
 
-	lastGlobal, _ := p.app.FindFirstRecordByFilter("drafts", "status = 'posted'", "-posted_at")
-	if lastGlobal != nil {
-		elapsed := time.Since(lastGlobal.GetDateTime("posted_at").Time())
+	lastGlobals, _ := p.app.FindRecordsByFilter("drafts", "status = 'posted'", "-posted_at", 0, 1)
+	if len(lastGlobals) > 0 {
+		elapsed := time.Since(lastGlobals[0].GetDateTime("posted_at").Time())
 		if elapsed < globalDelay {
 			return false
 		}
 	}
 
 	existingInThread, _ := p.app.FindFirstRecordByFilter("drafts",
-		"status = 'posted' && user = {:uid} && thread = {:tid}", "",
+		"status = 'posted' && user = {:uid} && thread = {:tid}",
 		dbx.Params{"uid": userID, "tid": threadID})
 	isFollowUp := existingInThread != nil
 
 	if !isFollowUp {
-		lastAccount, _ := p.app.FindFirstRecordByFilter("drafts",
-			"status = 'posted' && user = {:uid}", "-posted_at",
+		lastAccounts, _ := p.app.FindRecordsByFilter("drafts",
+			"status = 'posted' && user = {:uid}", "-posted_at", 0, 1,
 			dbx.Params{"uid": userID})
+		var lastAccount *core.Record
+		if len(lastAccounts) > 0 {
+			lastAccount = lastAccounts[0]
+		}
 		if lastAccount != nil {
 			elapsed := time.Since(lastAccount.GetDateTime("posted_at").Time())
 			if elapsed < accountDelay {
@@ -149,7 +153,7 @@ func (p *Poster) tryPost(draft *core.Record, globalDelay, accountDelay, subreddi
 	}
 
 	account, err := p.app.FindFirstRecordByFilter("reddit_accounts",
-		"user = {:uid} && is_active = true", "", dbx.Params{"uid": userID})
+		"user = {:uid} && is_active = true", dbx.Params{"uid": userID})
 	if err != nil {
 		log.Printf("worker: poster: no reddit account for user %s, marking failed", userID)
 		draft.Set("status", "failed")
@@ -201,7 +205,7 @@ func (p *Poster) tryPost(draft *core.Record, globalDelay, accountDelay, subreddi
 	}
 
 	status, err := p.app.FindFirstRecordByFilter("thread_status",
-		"thread = {:tid} && user = {:uid}", "",
+		"thread = {:tid} && user = {:uid}",
 		dbx.Params{"tid": threadID, "uid": userID})
 	if err == nil {
 		status.Set("status", "replied")

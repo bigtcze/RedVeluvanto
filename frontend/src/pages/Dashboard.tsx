@@ -61,17 +61,21 @@ export default function Dashboard() {
         const oneDayAgo = new Date(Date.now() - 86400000).toISOString()
         const [newThreadsResult, postedDraftsResult, keywordsResult, personasResult, recentDraftsResult] =
           await Promise.all([
-            pb.collection('threads').getList(1, 1, {
+            pb.collection('threads').getFullList({
               filter: `found_at >= "${oneDayAgo}"`,
+              fields: 'id',
             }),
-            pb.collection('drafts').getList(1, 1, {
+            pb.collection('drafts').getFullList({
               filter: `status = "posted" && posted_at >= "${oneDayAgo}" && user = "${user.id}"`,
+              fields: 'id',
             }),
-            pb.collection('keywords').getList(1, 1, {
+            pb.collection('keywords').getFullList({
               filter: 'is_active = true',
+              fields: 'id',
             }),
-            pb.collection('personas').getList(1, 1, {
+            pb.collection('personas').getFullList({
               filter: `created_by = "${user.id}"`,
+              fields: 'id',
             }),
             pb.collection('drafts').getList<DraftWithExpand>(1, 10, {
               filter: `user = "${user.id}"`,
@@ -80,10 +84,10 @@ export default function Dashboard() {
             }),
           ])
         setStats({
-          newThreads: newThreadsResult.totalItems,
-          replied: postedDraftsResult.totalItems,
-          activeKeywords: keywordsResult.totalItems,
-          personas: personasResult.totalItems,
+          newThreads: newThreadsResult.length,
+          replied: postedDraftsResult.length,
+          activeKeywords: keywordsResult.length,
+          personas: personasResult.length,
         })
         setRecentDrafts(recentDraftsResult.items)
 

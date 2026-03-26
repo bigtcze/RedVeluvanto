@@ -210,7 +210,7 @@ func RegisterDraftRoutes(e *core.ServeEvent, aiClient *ai.Client, redditClient *
 		isFollowUp := false
 		if threadID != "" {
 			existing, _ := re.App.FindFirstRecordByFilter("drafts",
-				"status = 'posted' && user = {:uid} && thread = {:tid}", "",
+				"status = 'posted' && user = {:uid} && thread = {:tid}",
 				dbx.Params{"uid": re.Auth.Id, "tid": threadID})
 			isFollowUp = existing != nil
 		}

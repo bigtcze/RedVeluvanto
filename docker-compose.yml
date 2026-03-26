@@ -2,7 +2,7 @@ services:
   frontend:
     image: ghcr.io/bigtcze/redveluvanto-frontend:latest
     ports:
-      - "80:80"
+      - "3080:80"
     depends_on:
       - backend
     restart: unless-stopped

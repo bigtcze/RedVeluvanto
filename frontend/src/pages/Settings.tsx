@@ -8,16 +8,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
 import { Slider } from '@/components/ui/slider'
 import { CheckCircle2, XCircle, ExternalLink, Plus, Pencil, Trash2 } from 'lucide-react'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+
 
 interface UserSettings extends RecordModel {
   discord_webhook_url: string
@@ -86,11 +79,7 @@ export default function Settings() {
   const [isSavingForbidden, setIsSavingForbidden] = useState(false)
   const [forbiddenSaved, setForbiddenSaved] = useState(false)
 
-  const [availableModels, setAvailableModels] = useState<string[]>([])
-  const [aiModel, setAiModel] = useState('')
-  const [customModelName, setCustomModelName] = useState('')
-  const [isSavingAiModel, setIsSavingAiModel] = useState(false)
-  const [aiModelSaved, setAiModelSaved] = useState(false)
+
 
   const fetchAdminUsers = async () => {
     try {
@@ -165,32 +154,7 @@ export default function Settings() {
         void _e
       }
 
-      let models: string[] = []
-      try {
-        const res = await fetch('/api/ai/models', {
-          headers: { Authorization: pb.authStore.token },
-        })
-        if (res.ok) {
-          models = (await res.json()) as string[]
-          setAvailableModels(models)
-        }
-      } catch (_e) {
-        void _e
-      }
 
-      try {
-        const record = await pb.collection('settings').getFirstListItem('key = "ai_model"')
-        const val = record.value as string
-        const parsed = JSON.parse(val) as string
-        if (models.length === 0 || models.includes(parsed)) {
-          setAiModel(parsed)
-        } else {
-          setAiModel('custom')
-          setCustomModelName(parsed)
-        }
-      } catch (_e) {
-        void _e
-      }
     }
     void fetchAll()
   }, [user?.id])
@@ -246,25 +210,7 @@ export default function Settings() {
     }
   }
 
-  const handleSaveAiModel = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    setIsSavingAiModel(true)
-    const modelName = aiModel === 'custom' ? customModelName : aiModel
-    try {
-      try {
-        const existing = await pb.collection('settings').getFirstListItem('key = "ai_model"')
-        await pb.collection('settings').update(existing.id, { value: JSON.stringify(modelName) })
-      } catch {
-        await pb.collection('settings').create({ key: 'ai_model', value: JSON.stringify(modelName) })
-      }
-      setAiModelSaved(true)
-      setTimeout(() => setAiModelSaved(false), 2000)
-    } catch (_e) {
-      void _e
-    } finally {
-      setIsSavingAiModel(false)
-    }
-  }
+
 
   const handleConnectReddit = () => {
     window.location.href = '/api/reddit/auth'
@@ -381,12 +327,13 @@ export default function Settings() {
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col">
       <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border px-4 py-4">
         <h1 className="text-xl font-bold">Settings</h1>
       </div>
 
-      <div className="flex-1 overflow-auto p-4 flex flex-col gap-6 max-w-lg">
+      <div className="p-4 pb-8 grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-5xl mx-auto w-full">
+
         <section className="rounded-xl border border-border bg-card p-5">
           <h2 className="text-sm font-semibold mb-1">Reddit Account</h2>
           <p className="text-xs text-muted-foreground mb-4">
@@ -431,9 +378,69 @@ export default function Settings() {
           )}
         </section>
 
-        <Separator />
-
         <section className="rounded-xl border border-border bg-card p-5">
+          <h2 className="text-sm font-semibold mb-1">Discord Webhook</h2>
+          <p className="text-xs text-muted-foreground mb-4">
+            Receive notifications in Discord when new relevant threads are found.
+          </p>
+          <form onSubmit={(e) => void handleSaveWebhook(e)} className="flex flex-col gap-3">
+            <Input
+              type="url"
+              placeholder="https://discord.com/api/webhooks/…"
+              value={webhookUrl}
+              onChange={(e) => setWebhookUrl(e.target.value)}
+            />
+            <Button type="submit" size="sm" disabled={isSavingWebhook} className="self-start">
+              {webhookSaved ? 'Saved!' : isSavingWebhook ? 'Saving…' : 'Save Webhook'}
+            </Button>
+          </form>
+        </section>
+
+        <section className="rounded-xl border border-border bg-card p-5 lg:col-span-2">
+          <h2 className="text-sm font-semibold mb-1">Monitoring</h2>
+          <p className="text-xs text-muted-foreground mb-4">
+            Configure relevance thresholds and scan frequency.
+          </p>
+          <form onSubmit={(e) => void handleSaveMonitoring(e)} className="flex flex-col gap-5">
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium">Min Relevance Score</label>
+                <span className="text-sm font-mono text-primary">{minScore}%</span>
+              </div>
+              <Slider
+                min={0}
+                max={100}
+                step={5}
+                value={[minScore]}
+                onValueChange={(val) => {
+                  const v = Array.isArray(val) ? val[0] : val
+                  if (typeof v === 'number') setMinScore(v)
+                }}
+              />
+              <p className="text-xs text-muted-foreground">
+                Threads below this score will be filtered from the inbox.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium">Monitoring Interval (minutes)</label>
+              <Input
+                type="number"
+                min={1}
+                max={1440}
+                value={monitoringInterval}
+                onChange={(e) => setMonitoringInterval(Number(e.target.value))}
+                className="w-32"
+              />
+            </div>
+
+            <Button type="submit" size="sm" disabled={isSavingMonitoring} className="self-start">
+              {isSavingMonitoring ? 'Saving…' : 'Save Settings'}
+            </Button>
+          </form>
+        </section>
+
+        <section className="rounded-xl border border-border bg-card p-5 lg:col-span-2">
           <h2 className="text-sm font-semibold mb-1">My Personas</h2>
           <p className="text-xs text-muted-foreground mb-4">
             Manage your response personas for different goals and audiences.
@@ -493,77 +500,9 @@ export default function Settings() {
           </Button>
         </section>
 
-        <Separator />
-
-        <section className="rounded-xl border border-border bg-card p-5">
-          <h2 className="text-sm font-semibold mb-1">Discord Webhook</h2>
-          <p className="text-xs text-muted-foreground mb-4">
-            Receive notifications in Discord when new relevant threads are found.
-          </p>
-          <form onSubmit={(e) => void handleSaveWebhook(e)} className="flex flex-col gap-3">
-            <Input
-              type="url"
-              placeholder="https://discord.com/api/webhooks/…"
-              value={webhookUrl}
-              onChange={(e) => setWebhookUrl(e.target.value)}
-            />
-            <Button type="submit" size="sm" disabled={isSavingWebhook} className="self-start">
-              {webhookSaved ? 'Saved!' : isSavingWebhook ? 'Saving…' : 'Save Webhook'}
-            </Button>
-          </form>
-        </section>
-
-        <Separator />
-
-        <section className="rounded-xl border border-border bg-card p-5">
-          <h2 className="text-sm font-semibold mb-1">Monitoring</h2>
-          <p className="text-xs text-muted-foreground mb-4">
-            Configure relevance thresholds and scan frequency.
-          </p>
-          <form onSubmit={(e) => void handleSaveMonitoring(e)} className="flex flex-col gap-5">
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-medium">Min Relevance Score</label>
-                <span className="text-sm font-mono text-primary">{minScore}%</span>
-              </div>
-              <Slider
-                min={0}
-                max={100}
-                step={5}
-                value={[minScore]}
-                onValueChange={(val) => {
-                  const v = Array.isArray(val) ? val[0] : val
-                  if (typeof v === 'number') setMinScore(v)
-                }}
-              />
-              <p className="text-xs text-muted-foreground">
-                Threads below this score will be filtered from the inbox.
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium">Monitoring Interval (minutes)</label>
-              <Input
-                type="number"
-                min={1}
-                max={1440}
-                value={monitoringInterval}
-                onChange={(e) => setMonitoringInterval(Number(e.target.value))}
-                className="w-32"
-              />
-            </div>
-
-            <Button type="submit" size="sm" disabled={isSavingMonitoring} className="self-start">
-              {isSavingMonitoring ? 'Saving…' : 'Save Settings'}
-            </Button>
-          </form>
-        </section>
-
         {isAdmin && (
           <>
-            <Separator />
-
-            <section className="rounded-xl border border-border bg-card p-5">
+            <section className="rounded-xl border border-border bg-card p-5 lg:col-span-2">
               <h2 className="text-sm font-semibold mb-1">Product</h2>
               <p className="text-xs text-muted-foreground mb-4">
                 Describe your product so AI can score threads and generate replies with context.
@@ -607,9 +546,7 @@ export default function Settings() {
               </form>
             </section>
 
-            <Separator />
-
-            <section className="rounded-xl border border-border bg-card p-5">
+            <section className="rounded-xl border border-border bg-card p-5 lg:col-span-2">
               <h2 className="text-sm font-semibold mb-1">Forbidden Phrases</h2>
               <p className="text-xs text-muted-foreground mb-4">
                 Words and phrases the AI must never use in any generated reply. One per line. Applied globally across all personas.
@@ -627,42 +564,9 @@ export default function Settings() {
               </form>
             </section>
 
-            <Separator />
 
-            <section className="rounded-xl border border-border bg-card p-5">
-              <h2 className="text-sm font-semibold mb-1">AI Model</h2>
-              <p className="text-xs text-muted-foreground mb-4">
-                Select the AI model used for scoring and response generation.
-              </p>
-              <form onSubmit={(e) => void handleSaveAiModel(e)} className="flex flex-col gap-3">
-                <Select value={aiModel} onValueChange={(v) => { if (v !== null) setAiModel(v) }}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select model…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableModels.map((m) => (
-                      <SelectItem key={m} value={m}>{m}</SelectItem>
-                    ))}
-                    <SelectItem value="custom">Custom…</SelectItem>
-                  </SelectContent>
-                </Select>
-                {aiModel === 'custom' && (
-                  <Input
-                    placeholder="Enter model name…"
-                    value={customModelName}
-                    onChange={(e) => setCustomModelName(e.target.value)}
-                    required
-                  />
-                )}
-                <Button type="submit" size="sm" disabled={isSavingAiModel} className="self-start">
-                  {aiModelSaved ? 'Saved!' : isSavingAiModel ? 'Saving…' : 'Save Model'}
-                </Button>
-              </form>
-            </section>
 
-            <Separator />
-
-            <section className="rounded-xl border border-border bg-card p-5">
+            <section className="rounded-xl border border-border bg-card p-5 lg:col-span-2">
               <h2 className="text-sm font-semibold mb-1">User Management</h2>
               <p className="text-xs text-muted-foreground mb-4">
                 Create and manage user accounts.

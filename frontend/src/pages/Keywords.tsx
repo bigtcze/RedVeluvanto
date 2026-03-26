@@ -13,7 +13,7 @@ interface Keyword extends RecordModel {
   keyword: string
   subreddits: string[]
   is_active: boolean
-  user: string
+  created_by: string
 }
 
 export default function Keywords() {
@@ -28,7 +28,7 @@ export default function Keywords() {
   const fetchKeywords = async () => {
     try {
       const result = await pb.collection('keywords').getFullList<Keyword>({
-        filter: `user = "${user?.id ?? ''}"`,
+        filter: `created_by = "${user?.id ?? ''}"`,
         sort: '-created',
       })
       setKeywords(result)
@@ -68,7 +68,7 @@ export default function Keywords() {
         keyword: newKeyword.trim(),
         subreddits,
         is_active: true,
-        user: user?.id,
+        created_by: user?.id,
       })
       setKeywords((prev) => [created, ...prev])
       setNewKeyword('')

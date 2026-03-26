@@ -3,7 +3,6 @@ package routes
 import (
 	"net/http"
 
-	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 
@@ -14,20 +13,23 @@ func isSuperuser(app core.App, authRecord *core.Record) bool {
 	if authRecord == nil {
 		return false
 	}
-	_, err := app.FindFirstRecordByFilter("_superusers", "email = {:email}", dbx.Params{"email": authRecord.GetString("email")})
-	return err == nil
+	firstUsers, err := app.FindRecordsByFilter("users", "", "created", 1, 0)
+	if err != nil || len(firstUsers) == 0 {
+		return false
+	}
+	return firstUsers[0].Id == authRecord.Id || firstUsers[0].Email() == authRecord.Email()
 }
 
 func RegisterAdminRoutes(e *core.ServeEvent, aiClient *ai.Client) {
 	e.Router.GET("/api/setup/status", func(re *core.RequestEvent) error {
-		_, err := re.App.FindFirstRecordByFilter("_superusers", "id != ''")
-		needsSetup := err != nil
+		users, err := re.App.FindRecordsByFilter("users", "", "", 1, 0)
+		needsSetup := err != nil || len(users) == 0
 		return re.JSON(http.StatusOK, map[string]bool{"needsSetup": needsSetup})
 	})
 
 	e.Router.POST("/api/setup/init", func(re *core.RequestEvent) error {
-		_, err := re.App.FindFirstRecordByFilter("_superusers", "id != ''")
-		if err == nil {
+		existing, _ := re.App.FindRecordsByFilter("users", "", "", 1, 0)
+		if len(existing) > 0 {
 			return re.JSON(http.StatusBadRequest, map[string]string{"error": "Already set up"})
 		}
 
@@ -37,17 +39,6 @@ func RegisterAdminRoutes(e *core.ServeEvent, aiClient *ai.Client) {
 		}
 		if err := re.BindBody(&body); err != nil {
 			return re.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
-		}
-
-		superusers, err := re.App.FindCollectionByNameOrId("_superusers")
-		if err != nil {
-			return re.JSON(http.StatusInternalServerError, map[string]string{"error": "Collection not found"})
-		}
-		record := core.NewRecord(superusers)
-		record.SetEmail(body.Email)
-		record.SetPassword(body.Password)
-		if err := re.App.Save(record); err != nil {
-			return re.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		}
 
 		users, err := re.App.FindCollectionByNameOrId("users")
@@ -64,6 +55,15 @@ func RegisterAdminRoutes(e *core.ServeEvent, aiClient *ai.Client) {
 
 		return re.JSON(http.StatusOK, map[string]bool{"ok": true})
 	})
+
+	e.Router.GET("/api/admin/debug", func(re *core.RequestEvent) error {
+		return re.JSON(http.StatusOK, map[string]interface{}{
+			"auth_id":         re.Auth.Id,
+			"auth_email":      re.Auth.Email(),
+			"auth_collection": re.Auth.Collection().Name,
+			"is_superuser":    isSuperuser(re.App, re.Auth),
+		})
+	}).Bind(apis.RequireAuth())
 
 	e.Router.GET("/api/admin/users", func(re *core.RequestEvent) error {
 		if !isSuperuser(re.App, re.Auth) {
